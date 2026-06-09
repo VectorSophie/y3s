@@ -71,6 +71,12 @@
 .pf-rail__label {
   font-size: 13px;
 }
+/* Hide the rail while the drawer is open. */
+.pf-overlay:has(.pf-drawer.is-open) .pf-rail {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(8px);
+}
 .pf-rail .pf-icon {
   color: var(--pf-accent);
 }

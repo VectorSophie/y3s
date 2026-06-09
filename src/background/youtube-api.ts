@@ -185,12 +185,10 @@ async function authedRequest<T>(
   context: WriteContext,
   retried = false,
 ): Promise<T> {
-  let token: string;
-  try {
-    token = await getAuthToken(false);
-  } catch {
-    token = await getAuthToken(true);
-  }
+  // Always silent here. Interactive sign-in is an explicit user action
+  // (the "Connect" button → AUTH_GET_TOKEN interactive), so loading a page
+  // never surprises the user with an OAuth popup.
+  const token = await getAuthToken(false);
 
   let res: Response;
   try {
