@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.env
+.env.local
+
+# Local OAuth client id override (see README) — keep secrets out of git
+manifest.local.json

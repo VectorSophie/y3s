@@ -1,0 +1,24 @@
+{
+  "name": "y3s",
+  "version": "0.1.0",
+  "description": "y3s (YouTube is Somehow Still Shit) — a Spotify-like playlist workstation injected into regular YouTube playlist pages.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "chrome-extension",
+    "manifest-v3",
+    "youtube",
+    "playlist"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  }
+}
