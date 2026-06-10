@@ -57,7 +57,7 @@ Write-Host @"
  2) Create the OAuth client
     https://console.cloud.google.com/auth/clients?project=$ProjectId
     - Create client -> Application type: "Chrome Extension"
-    - Application ID: your unpacked extension's ID from chrome://extensions
+    - Application ID: jdahkeplppmncjgkfabngnclfieeledp  (pinned via manifest "key")
     - Copy the generated client_id into manifest.json -> oauth2.client_id,
       then run: npm run build  and reload the extension.
 ------------------------------------------------------------------------------

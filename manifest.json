@@ -4,6 +4,7 @@
   "short_name": "y3s",
   "version": "0.1.0",
   "description": "A Spotify-like playlist editor injected into regular YouTube playlist pages. Search, multi-select, phases, and real API edits.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv4yAOO+qbFd+4OP8MHj+zfiZ4xW7Lk0WuvY6R3M96VwM5NqKr8pvjupxAsU3Kh2iawMHBvjgkV+2UhFmKGk/NorNa3d18YSktpok/5jazUL8R1YdgPzBlvcEcHygh1EY/aKnTB6AVoxKAjz0O4ibwsXck9HH4CGJl5OFMlF7SCR/LUTV9DnCTveoAXQry7xbAEzfdYclq+ETIjaBHJ5LibyMDBVNnUCUUWCSiAUjWviWWsyxn3YTY3m5gyliFVFXMO+JxbZTeSDZKESKc0kLs6sS/Wh48hEr8pJ1wDYKdPjCJ16SOb6C25+RVnzz5LmZvg2UHKI/5X8LPaFhZcKAcwIDAQAB",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

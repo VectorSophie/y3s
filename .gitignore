@@ -7,3 +7,7 @@ dist/
 
 # Local OAuth client id override (see README) — keep secrets out of git
 manifest.local.json
+
+# Extension signing private key — pins the ID; never commit. (The public half
+# lives in manifest.json "key", which is safe to commit.)
+key.pem
