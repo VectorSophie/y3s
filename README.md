@@ -87,6 +87,27 @@ npm run build      # outputs to dist/   (npm run watch to rebuild on change)
 3. Click **Load unpacked** and select the **`dist/`** folder.
 4. Copy the extension's **ID** (shown on its card) — you'll need it next.
 
+### Faster setup with gcloud (optional)
+
+If you have the [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)
+installed, a helper script does the scriptable parts of steps 3–6 — creating
+the project and **enabling the YouTube Data API v3** — then prints the exact
+console links for the rest:
+
+```bash
+./scripts/gcloud-setup.sh my-project-id        # macOS / Linux / Git Bash
+```
+```powershell
+.\scripts\gcloud-setup.ps1 -ProjectId my-project-id   # Windows
+```
+
+Heads-up: the **OAuth client ID itself cannot be created from gcloud** (or any
+API). The "Chrome Extension" client type is Google Cloud Console–only — as are
+the `gcloud iam oauth-clients` / `gcloud iap oauth-clients` commands, which only
+make Workforce/IAP clients, not consumer ones. So the script automates project
++ API enablement and hands you off to the console for the consent screen and
+client ID (steps 4–6 below).
+
 ### 3. Enable the YouTube Data API v3
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create
