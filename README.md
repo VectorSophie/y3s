@@ -1,9 +1,10 @@
 # y3s — *YouTube is Somehow Still Shit*
 
-A Manifest V3 Chrome extension that injects a clean, Spotify-like **playlist
-workstation** directly into regular YouTube playlist pages. It turns a flat
-YouTube playlist into a searchable, selectable, sectioned editing interface —
-right on top of the page, not in a cramped popup.
+A Manifest V3 Chrome extension that turns a regular YouTube playlist page into a
+clean, Spotify-like **playlist workstation** — **in place**. Open a playlist and
+the searchable, selectable, sectioned editor renders right in the page, no
+clicks to open. It works instantly with no sign-in (reading the page) and
+upgrades to full, editable data when you connect your Google account.
 
 > Works on **regular YouTube** (`youtube.com`). It does **not** target
 > `music.youtube.com`.
@@ -12,7 +13,9 @@ right on top of the page, not in a cramped popup.
 
 ## What it is
 
-y3s adds a right-side drawer to YouTube playlist pages. From there you can:
+y3s renders its panel inside the YouTube `/playlist` page (the native list is
+hidden while it's shown, with a **"Show original"** toggle to flip back). From
+there you can:
 
 - **Search** inside the playlist (title / channel / video id), instantly.
 - **Multi-select** tracks: click, shift-click ranges, Ctrl/Cmd-click toggles,
@@ -32,7 +35,8 @@ keyboard-driven, and honest about what costs quota.
 
 | Area        | What you get                                                            |
 | ----------- | ----------------------------------------------------------------------- |
-| Injection   | One Shadow-DOM drawer on `playlist?list=` and `watch?v=…&list=` pages.   |
+| Injection   | In-place Shadow-DOM panel rendered inside the `/playlist` page column.   |
+| Data        | Works instantly with no sign-in (reads the page); upgrades to full API data when signed in. |
 | Search      | Fast client-side filtering.                                             |
 | Selection   | Click, shift-range, Ctrl/Cmd-toggle, Alt-drag marquee, select-all.      |
 | Phases      | Create / rename / delete / collapse, assign selection, "Unphased" group.|
@@ -42,9 +46,9 @@ keyboard-driven, and honest about what costs quota.
 | Shortcuts   | `Esc`, `Ctrl/Cmd+A`, `/`, `Delete`, `P`, `S`.                           |
 | Mock mode   | Works with sample data even before OAuth is configured.                 |
 
-### Keyboard shortcuts (drawer focused)
+### Keyboard shortcuts (panel focused)
 
-- `Esc` — clear selection, or close the drawer
+- `Esc` — clear selection
 - `Ctrl/Cmd + A` — select all visible tracks
 - `/` — focus search
 - `Delete` / `Backspace` — delete selected (with confirmation)
@@ -58,6 +62,8 @@ keyboard-driven, and honest about what costs quota.
 - **Duplicate removal**, **export/import phases**, and **move-block** polish are
   partially stubbed (duplicates *filter* works; one-click removal is a TODO).
 - Optimised for **small-to-medium playlists** (~100–500 items).
+- **Playlist pages only.** The in-place panel targets `youtube.com/playlist?list=…`.
+  Watch pages (`/watch?…&list=`) are not enhanced yet.
 - **No DOM-write fallback.** If an API edit fails, y3s shows a clear error — it
   will never click YouTube's own controls to fake an edit.
 - **YouTube Music is not supported.**
