@@ -1,12 +1,10 @@
-// Content script entry. Loads on every YouTube page (the manifest matches
-// www.youtube.com/*) and decides per-URL whether to inject the overlay, so it
-// survives YouTube's SPA navigation — Chrome only injects content scripts on
-// real document loads, not History-API navigations.
+// Content script entry. Loads on every YouTube page; on a /playlist URL it
+// mounts the in-place panel and runs the hybrid load. Survives SPA navigation.
 
-import { ROOT_ELEMENT_ID } from "../shared/constants";
 import type { Command } from "../shared/messages";
+import { ROOT_ELEMENT_ID } from "../shared/constants";
 import { currentPlaylistId, onUrlChange } from "./page-detect";
-import { OverlayRoot } from "./overlay-root";
+import { PanelRoot } from "./panel-root";
 
 const TAG = "[y3s]";
 
@@ -16,11 +14,12 @@ declare global {
   }
 }
 
+function isPlaylistPage(): boolean {
+  return location.pathname === "/playlist" && currentPlaylistId() !== null;
+}
+
 function main(): void {
-  if (window.__y3sInjected || document.getElementById(ROOT_ELEMENT_ID)) {
-    console.info(TAG, "already injected, skipping");
-    return;
-  }
+  if (window.__y3sInjected) return;
   window.__y3sInjected = true;
   console.info(
     TAG,
@@ -28,23 +27,22 @@ function main(): void {
     location.href,
   );
 
-  let overlay: OverlayRoot | null = null;
+  let root: PanelRoot | null = null;
 
   const sync = () => {
     try {
-      const playlistId = currentPlaylistId();
-      if (playlistId) {
-        if (!overlay) {
-          overlay = new OverlayRoot();
-          console.info(TAG, "overlay mounted for playlist", playlistId);
+      if (isPlaylistPage()) {
+        if (!root) {
+          root = new PanelRoot();
+          console.info(TAG, "panel mounted for", currentPlaylistId());
         }
-        overlay.show();
-        void overlay.setPlaylist(playlistId);
-      } else {
-        overlay?.hide();
+        void root.setPlaylist(currentPlaylistId()!);
+      } else if (root) {
+        root.destroy();
+        root = null;
       }
     } catch (err) {
-      console.error(TAG, "sync() failed — overlay could not mount:", err);
+      console.error(TAG, "sync() failed:", err);
     }
   };
 
@@ -54,18 +52,12 @@ function main(): void {
     sync();
   });
 
-  // Toolbar action button → open/toggle the drawer.
+  // Toolbar action button → scroll the panel into view if present.
   chrome.runtime.onMessage.addListener((msg: Command) => {
-    if (msg.type !== "TOGGLE_DRAWER") return;
-    try {
-      const id = currentPlaylistId();
-      if (!overlay && id) {
-        overlay = new OverlayRoot();
-        void overlay.setPlaylist(id);
-      }
-      overlay?.toggle();
-    } catch (err) {
-      console.error(TAG, "toggle failed:", err);
+    if (msg.type === "TOGGLE_DRAWER") {
+      document
+        .getElementById(ROOT_ELEMENT_ID)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   });
 }
