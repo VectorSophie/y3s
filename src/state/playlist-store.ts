@@ -58,6 +58,50 @@ export class PlaylistStore extends Emitter<PlaylistState> {
     this.set({ status: "error", error: res.error, snapshot: null });
   }
 
+  /**
+   * Hybrid load: paint scraped DOM data immediately, then upgrade to the full
+   * API snapshot if the user is already signed in. Selection and phases are
+   * keyed by videoId elsewhere, so swapping the snapshot preserves them.
+   */
+  async loadHybrid(playlistId: string, scrape: () => Track[]): Promise<void> {
+    this.set({ status: "loading", playlistId, error: null });
+
+    const domItems = scrape();
+    if (domItems.length > 0) {
+      this.set({
+        status: "ready",
+        snapshot: { playlistId, items: domItems, fetchedAt: Date.now(), source: "dom" },
+        isMock: false,
+        error: null,
+      });
+    }
+
+    const status = await sendMessage({ type: "AUTH_STATUS" });
+    const signedIn = status.ok && status.data.signedIn;
+
+    if (signedIn) {
+      const res = await sendMessage({ type: "FETCH_PLAYLIST_ITEMS", playlistId });
+      if (res.ok) {
+        this.set({
+          status: "ready",
+          snapshot: { ...res.data, source: "api" },
+          isMock: false,
+          error: null,
+        });
+        return;
+      }
+      if (res.error.code !== "AUTH_NOT_CONFIGURED" && domItems.length === 0) {
+        this.set({ status: "error", error: res.error, snapshot: null });
+        return;
+      }
+    }
+
+    // No DOM rows and no API data → fall back to mock so the UI is still usable.
+    if (domItems.length === 0 && this.state.snapshot === null) {
+      this.loadMock(playlistId);
+    }
+  }
+
   /** Force the local mock fixture (used by dev toggle and as a fallback). */
   loadMock(playlistId: string): void {
     this.set({
