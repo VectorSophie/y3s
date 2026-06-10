@@ -24,10 +24,7 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.youtube.com/playlist*",
-        "https://www.youtube.com/watch*"
-      ],
+      "matches": ["https://www.youtube.com/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
@@ -39,7 +36,7 @@
     "https://www.googleapis.com/*"
   ],
   "oauth2": {
-    "client_id": "YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "9744192329-4llnr7vq1a8vghbqblq5360sogkbh59d.apps.googleusercontent.com",
     "scopes": ["https://www.googleapis.com/auth/youtube"]
   },
   "minimum_chrome_version": "114"
