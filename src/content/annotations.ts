@@ -36,8 +36,12 @@ export function ensureCheckbox(row: HTMLElement, onToggle: (checked: boolean) =>
   const box = document.createElement("input");
   box.type = "checkbox";
   box.className = "y3s-check";
-  box.addEventListener("click", (e) => e.stopPropagation());
-  box.addEventListener("change", () => onToggle(box.checked));
+  // Single click handler: stops the row's own click and reports the (already
+  // toggled) checked state. Works in real browsers and jsdom alike.
+  box.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onToggle(box.checked);
+  });
   row.prepend(box);
 }
 
