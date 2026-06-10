@@ -42,70 +42,22 @@
   flex: none;
 }
 
-/* ── Open rail (collapsed affordance) ──────────────────────────────────── */
-.pf-rail {
-  position: fixed;
-  top: 50%;
-  right: 0;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 12px 10px 14px;
-  background: var(--pf-bg-2);
-  color: var(--pf-text);
-  border: 1px solid var(--pf-line);
-  border-right: none;
-  border-radius: var(--pf-radius) 0 0 var(--pf-radius);
-  box-shadow: var(--pf-shadow);
-  cursor: pointer;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  transition: background 0.15s, color 0.15s, padding 0.15s;
-}
-.pf-rail:hover {
-  background: var(--pf-bg-3);
-  color: #fff;
-  padding-right: 16px;
-}
-.pf-rail__label {
-  font-size: 13px;
-}
-/* Hide the rail while the drawer is open. */
-.pf-overlay:has(.pf-drawer.is-open) .pf-rail {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%) translateX(8px);
-}
-.pf-rail .pf-icon {
-  color: var(--pf-accent);
-}
-
-/* ── Drawer shell ──────────────────────────────────────────────────────── */
-.pf-drawer {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  width: var(--pf-drawer-w);
-  max-width: calc(100vw - 24px);
+/* ── In-column panel shell ─────────────────────────────────────────────── */
+.pf-panel {
   display: flex;
   flex-direction: column;
+  max-height: min(80vh, 900px);
   background: var(--pf-bg);
   border: 1px solid var(--pf-line);
   border-radius: var(--pf-radius);
   box-shadow: var(--pf-shadow);
   overflow: hidden;
-  transform: translateX(calc(100% + 24px));
-  opacity: 0;
-  pointer-events: none;
-  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s;
+  margin-bottom: 16px;
   outline: none;
 }
-.pf-drawer.is-open {
-  transform: translateX(0);
-  opacity: 1;
-  pointer-events: auto;
+.pf-head__toggle {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 /* ── Header ────────────────────────────────────────────────────────────── */
@@ -292,6 +244,7 @@
   position: relative;
   flex: 1;
   min-height: 0;
+  max-height: 60vh;
   overflow-y: auto;
   padding: 4px 8px 16px;
   outline: none;

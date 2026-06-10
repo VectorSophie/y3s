@@ -9,15 +9,15 @@ it does **not** target music.youtube.com.
 ```
                          ┌─────────────────────────────────────────────┐
                          │              YouTube page (SPA)              │
-                         │  youtube.com/playlist?list=…  or  /watch?…   │
+                         │  youtube.com/playlist?list=…  (in-place)     │
                          │                                              │
                          │   ┌──────────────────────────────────────┐  │
-   page-detect.ts  ─────▶│   │  Injected root  (#y3s-root, ShadowDOM)│  │
-   (reads URL only)      │   │  ┌────────────────────────────────┐  │  │
-                         │   │  │ Drawer (right side)            │  │  │
+ page-detect.ts ───▶ mount-point  (#y3s-root in playlist column, ShadowDOM)
+ youtube-scrape ──▶│   │  ┌────────────────────────────────┐  │  │
+   (DOM read)            │   │  │ Panel (in playlist column)     │  │  │
                          │   │  │  header · search · chips       │  │  │
                          │   │  │  toolbar · track list · phases │  │  │
-                         │   │  │  toast                         │  │  │
+                         │   │  │  toast   (native list hidden)  │  │  │
                          │   │  └────────────────────────────────┘  │  │
                          │   └──────────────────────────────────────┘  │
                          └───────────────────────┬──────────────────────┘
@@ -47,13 +47,18 @@ it does **not** target music.youtube.com.
 
 **Content script (`/src/content`, `/src/ui`, `/src/state`)**
 
-- Detect the playlistId from the URL (playlist page or watch page `&list=`).
-- Inject a single Shadow-DOM root; respond to SPA navigation.
-- Render the entire drawer UI and own all interaction (search, selection,
+- Detect the playlistId from the URL (`/playlist` page; watch pages out of scope).
+- Mount a single Shadow-DOM panel **inside the playlist column** (`mount-point.ts`),
+  hiding the native list; respond to SPA navigation.
+- Render the entire panel UI and own all interaction (search, selection,
   drag-select, phases, shortcuts).
+- **Hybrid load:** paint instantly from scraped page DOM (`youtube-scrape.ts`,
+  `source:"dom"`), then upgrade to the full API snapshot (`source:"api"`) when a
+  silent token exists; reconcile by `videoId` so selection + phases survive.
 - Hold the in-memory playlist snapshot + selection.
 - Read/write phase metadata in `chrome.storage.local`.
-- **Never** touch OAuth tokens or call googleapis directly.
+- **Never** touch OAuth tokens or call googleapis directly. Writes require an
+  API snapshot first, so DOM-only sessions prompt sign-in on the first edit.
 
 **Background / service worker (`/src/background`)**
 

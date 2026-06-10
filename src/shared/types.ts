@@ -22,6 +22,8 @@ export interface PlaylistSnapshot {
   fetchedAt: number;
   /** True when the data is the local mock fixture, not the real API. */
   isMock?: boolean;
+  /** Where the data came from: scraped page DOM vs the YouTube Data API. */
+  source?: "dom" | "api";
 }
 
 /** Extension-only subsection metadata. YouTube playlists are flat; phases live

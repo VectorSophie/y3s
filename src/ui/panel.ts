@@ -1,5 +1,5 @@
-// The drawer: composes header, toolbar, action bar, track list, and toast, and
-// owns view state (search / filter / sort / grouping) plus the edit flows.
+// The in-place panel: composes header, toolbar, action bar, track list, and
+// toast, and owns view state (search / filter / sort / grouping) + edit flows.
 
 import { sendMessage } from "../shared/messages";
 import type { Result, Track } from "../shared/types";
@@ -19,8 +19,12 @@ import { Toast } from "./toast";
 import { TrackList, type DisplayItem } from "./track-list";
 import { ActionBar, Toolbar, type FilterId, type SortId } from "./toolbar";
 
-export class Drawer {
-  readonly host: HTMLElement; // the positioned drawer element
+export class Panel {
+  readonly el: HTMLElement; // the in-column panel root
+
+  /** Set by panel-root to flip back to YouTube's native list. */
+  onShowOriginal?: () => void;
+
   private body: HTMLElement;
   private titleEl: HTMLElement;
   private countEl: HTMLElement;
@@ -36,7 +40,6 @@ export class Drawer {
   private filter: FilterId = "all";
   private sort: SortId = "current";
   private visibleTrackIds: string[] = [];
-  private open = false;
   private detachers: Array<() => void> = [];
 
   constructor(
@@ -51,18 +54,22 @@ export class Drawer {
     // Header
     this.titleEl = h("div", { class: "pf-head__title" }, "y3s");
     this.countEl = h("div", { class: "pf-head__count" }, "");
-    this.badge = h("span", { class: "pf-badge", hidden: true }, "mock");
-    const closeBtn = h(
+    this.badge = h("span", { class: "pf-badge", hidden: true }, "page view");
+    const showOriginalBtn = h(
       "button",
-      { class: "pf-iconbtn pf-head__close", title: "Close (Esc)", onClick: () => this.close() },
-      icon("close"),
+      {
+        class: "pf-btn pf-btn--ghost pf-head__toggle",
+        title: "Show YouTube's original list",
+        onClick: () => this.onShowOriginal?.(),
+      },
+      "Show original",
     );
     const header = h(
       "div",
       { class: "pf-head" },
       h("div", { class: "pf-head__brand" }, icon("logo", 18), h("span", { class: "pf-head__wordmark" }, "y3s")),
       h("div", { class: "pf-head__meta" }, this.titleEl, h("div", { class: "pf-head__sub" }, this.countEl, this.badge)),
-      closeBtn,
+      showOriginalBtn,
     );
 
     // Toolbar + action bar + list
@@ -88,7 +95,7 @@ export class Drawer {
     });
 
     this.body = h("div", { class: "pf-body" }, this.toolbar.el, this.actionBar.el, this.list.el);
-    this.host = h("aside", { class: "pf-drawer", role: "dialog", "aria-label": "y3s playlist editor" }, header, this.body);
+    this.el = h("section", { class: "pf-panel", role: "region", "aria-label": "y3s playlist editor" }, header, this.body);
 
     this.wire();
   }
@@ -100,11 +107,8 @@ export class Drawer {
       this.playlist.subscribe((s) => this.onPlaylistChange(s)),
       this.selection.subscribe(() => this.onSelectionChange()),
       this.phases.subscribe(() => this.recompute()),
-      bindShortcuts(this.host, {
-        clearOrClose: () => {
-          if (this.selection.size > 0) this.selection.clear();
-          else this.close();
-        },
+      bindShortcuts(this.el, {
+        clearOrClose: () => this.selection.clear(),
         selectAll: () => this.selection.selectAll(this.visibleTrackIds),
         focusSearch: () => this.toolbar.focusSearch(),
         requestDelete: () => this.deleteSelected(),
@@ -117,21 +121,6 @@ export class Drawer {
         onSelect: (ids, additive) => this.selection.applyDrag(ids, additive),
       }),
     );
-  }
-
-  setOpen(open: boolean): void {
-    this.open = open;
-    this.host.classList.toggle("is-open", open);
-    if (open) setTimeout(() => this.host.focus(), 0);
-  }
-  toggle(): void {
-    this.setOpen(!this.open);
-  }
-  close(): void {
-    this.setOpen(false);
-  }
-  isOpen(): boolean {
-    return this.open;
   }
 
   destroy(): void {
@@ -157,7 +146,9 @@ export class Drawer {
   }
 
   private onPlaylistChange(s: PlaylistState): void {
-    this.badge.toggleAttribute("hidden", !s.isMock);
+    const src = s.snapshot?.source;
+    this.badge.hidden = !(s.isMock || src === "dom");
+    this.badge.textContent = s.isMock ? "mock" : "page view";
     if (s.status === "loading") {
       this.titleEl.textContent = "Loading playlist…";
       this.countEl.textContent = "";
@@ -353,12 +344,37 @@ export class Drawer {
 
   // ── edit flows ───────────────────────────────────────────────────────────
 
+  /**
+   * Writes need real playlistItemIds. If the current data is DOM-scraped, sign
+   * in (if needed) and load the API snapshot first. Returns true when the
+   * snapshot is API-backed (or mock) and the write may proceed.
+   */
+  private async ensureApiData(): Promise<boolean> {
+    if (this.playlist.get().isMock) return true; // mock writes are local-only
+    if (this.playlist.get().snapshot?.source === "api") return true;
+
+    const auth = await sendMessage({ type: "AUTH_GET_TOKEN", interactive: true });
+    if (!auth.ok) {
+      this.toast.error(messageForError(auth.error));
+      return false;
+    }
+    const id = this.playlist.get().playlistId!;
+    await this.playlist.loadHybrid(id, () => this.playlist.tracks);
+    if (this.playlist.get().snapshot?.source !== "api") {
+      this.toast.error("Couldn't load editable playlist data from YouTube.");
+      return false;
+    }
+    return true;
+  }
+
   private async deleteSelected(): Promise<void> {
-    const tracks = this.selectedTracks();
-    if (tracks.length === 0) {
+    if (this.selection.size === 0) {
       this.toast.show("Select some tracks to delete.");
       return;
     }
+    // Ensure API-backed data first, then capture tracks (real playlistItemIds).
+    if (!(await this.ensureApiData())) return;
+    const tracks = this.selectedTracks();
     const plan = buildDeletePlan(tracks);
     const ok = await confirmModal(this.mount, {
       title: "Delete selected tracks?",
@@ -385,11 +401,12 @@ export class Drawer {
   }
 
   private async moveSelected(edge: "top" | "bottom"): Promise<void> {
-    const tracks = this.selectedTracks();
-    if (tracks.length === 0) {
+    if (this.selection.size === 0) {
       this.toast.show("Select tracks to move.");
       return;
     }
+    if (!(await this.ensureApiData())) return;
+    const tracks = this.selectedTracks();
     const all = this.playlist.tracks;
     const plan = buildMovePlan(tracks, all, edge);
 
