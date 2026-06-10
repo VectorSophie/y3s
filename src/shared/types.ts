@@ -104,3 +104,15 @@ export interface ApiError {
 
 /** Uniform envelope returned by every background message handler. */
 export type Result<T> = { ok: true; data: T } | { ok: false; error: ApiError };
+
+/** A live YouTube playlist row indexed from the page DOM (v0.3 QoL layer). */
+export interface NativeRow {
+  videoId: string;
+  title: string;
+  channel?: string;
+  durationText?: string;
+  durationSec?: number;
+  index: number;
+  /** The native row element (e.g. ytd-playlist-video-renderer). */
+  el: HTMLElement;
+}
