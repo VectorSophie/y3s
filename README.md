@@ -9,6 +9,15 @@ upgrades to full, editable data when you connect your Google account.
 > Works on **regular YouTube** (`youtube.com`). It does **not** target
 > `music.youtube.com`.
 
+> **Two modes / branches.** `main` ships the **in-place panel** (v0.2) that
+> replaces the native list with the full editor. The branch
+> **`feat/v0.3-qol-layer`** is an alternate, *non-invasive* take: YouTube's
+> list stays exactly as is, and a slim toolbar + subtle row markers add the
+> quality-of-life wins — instant filter, duplicate highlighting, total runtime,
+> vim-style keyboard nav (`j/k`, `/`, `Enter`, `x`, `y`, `g/G`), copy/export
+> (JSON·CSV·Markdown), and bulk select → delete-via-API / open-in-tabs. No
+> sign-in needed until you delete. (Drag features are a planned later phase.)
+
 ---
 
 ## What it is
