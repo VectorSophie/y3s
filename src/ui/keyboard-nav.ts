@@ -4,6 +4,9 @@
 export interface KeyboardNavHandlers {
   /** Visible (non-hidden) rows in display order, for j/k/g/G + Enter/x/y. */
   visibleRows: () => HTMLElement[];
+  /** Our own shadow host — events originating inside it (toolbar input, modal)
+   *  are ignored so typing in our search box never triggers navigation. */
+  ownRoot: HTMLElement;
   focusSearch: () => void;
   onOpen: (row: HTMLElement) => void;
   onToggleSelect: (row: HTMLElement) => void;
@@ -33,9 +36,12 @@ export function bindKeyboardNav(handlers: KeyboardNavHandlers): () => void {
   };
 
   const onKey = (e: KeyboardEvent) => {
-    const t = e.target as HTMLElement;
-    if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) {
-      if (e.key === "Escape") (t as HTMLInputElement).blur();
+    const path = e.composedPath();
+    // Ignore anything from our own shadow UI (toolbar input, export menu, modal).
+    if (path.includes(handlers.ownRoot)) return;
+    // composedPath()[0] is the true target even across shadow boundaries.
+    const real = path[0] as HTMLElement | undefined;
+    if (real && (real.tagName === "INPUT" || real.tagName === "TEXTAREA" || real.isContentEditable)) {
       return;
     }
     switch (e.key) {
