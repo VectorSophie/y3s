@@ -4,7 +4,7 @@
 import type { Command } from "../shared/messages";
 import { ROOT_ELEMENT_ID } from "../shared/constants";
 import { currentPlaylistId, onUrlChange } from "./page-detect";
-import { PanelRoot } from "./panel-root";
+import { QolRoot } from "./qol-root";
 
 const TAG = "[y3s]";
 
@@ -27,16 +27,16 @@ function main(): void {
     location.href,
   );
 
-  let root: PanelRoot | null = null;
+  let root: QolRoot | null = null;
 
   const sync = () => {
     try {
       if (isPlaylistPage()) {
         if (!root) {
-          root = new PanelRoot();
-          console.info(TAG, "panel mounted for", currentPlaylistId());
+          root = new QolRoot();
+          console.info(TAG, "QoL layer mounted for", currentPlaylistId());
         }
-        void root.setPlaylist(currentPlaylistId()!);
+        root.setPlaylist(currentPlaylistId()!);
       } else if (root) {
         root.destroy();
         root = null;
