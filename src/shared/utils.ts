@@ -84,6 +84,25 @@ export function formatDuration(iso?: string): string | undefined {
   return h > 0 ? `${h}:${pad(min)}:${pad(sec)}` : `${min}:${pad(sec)}`;
 }
 
+/** Parse a "M:SS" or "H:MM:SS" duration label into seconds. */
+export function parseDurationText(s?: string): number | undefined {
+  if (!s) return undefined;
+  const parts = s.trim().split(":");
+  if (parts.length < 2 || parts.length > 3) return undefined;
+  if (!parts.every((p) => /^\d+$/.test(p))) return undefined;
+  return parts.reduce((acc, p) => acc * 60 + Number(p), 0);
+}
+
+/** Format a number of seconds as "M:SS" or "H:MM:SS". */
+export function formatSeconds(total: number): string {
+  const t = Math.max(0, Math.floor(total));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = t % 60;
+  const pad = (x: number) => x.toString().padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
 /** Run async tasks sequentially, collecting each result. Used for ordered,
  *  rate-friendly API writes. */
 export async function runSequential<I, O>(

@@ -33,7 +33,8 @@ function findColumn(): HTMLElement | null {
  * Returns the host element + controls. Does NOT build UI — caller attaches a
  * shadow root to `host`.
  */
-export function createMount(): Mount {
+export function createMount(opts: { hideNative?: boolean } = {}): Mount {
+  const hideNative = opts.hideNative ?? true;
   // Never double-mount.
   const existing = document.getElementById(ROOT_ELEMENT_ID);
   if (existing) existing.remove();
@@ -61,8 +62,8 @@ export function createMount(): Mount {
     if (nativeList) nativeList.style.display = show ? "" : "none";
     host.style.display = show ? "none" : "block";
   };
-  // Start with native list hidden, our panel shown (only when truly attached).
-  if (attached) showOriginal(false);
+  // Hide the native list only when asked (v0.2 panel does; v0.3 QoL layer doesn't).
+  if (attached && hideNative) showOriginal(false);
 
   return {
     host,
