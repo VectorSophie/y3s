@@ -2,11 +2,10 @@
 
 import { h, icon, ICONS } from "./dom";
 
-export interface MenuItem {
-  label: string;
-  checked?: boolean;
-  run: () => void;
-}
+export type MenuItem =
+  | { label: string; checked?: boolean; disabled?: boolean; run: () => void }
+  | { sep: true }
+  | { heading: string };
 
 let menuEl: HTMLElement | null = null;
 let menuAnchor: HTMLElement | null = null;
@@ -28,28 +27,35 @@ function onDocDown(e: Event): void {
 export function toggleMenu(anchor: HTMLElement, items: MenuItem[]): void {
   if (menuAnchor === anchor) return closeMenu();
   closeMenu();
-  const buttons = items.map((it) =>
-    h(
+  const checks = items.some((it) => "label" in it && it.checked !== undefined);
+  const buttons: HTMLButtonElement[] = [];
+  const nodes = items.map((it) => {
+    if ("sep" in it) return h("div", { class: "y3s-menu-sep", role: "separator" });
+    if ("heading" in it) return h("div", { class: "y3s-menu-heading", text: it.heading });
+    const b = h(
       "button",
       {
         class: "y3s-menu-item",
-        role: "menuitemradio",
-        "aria-checked": String(!!it.checked),
+        role: checks ? "menuitemradio" : "menuitem",
+        "aria-checked": checks ? String(!!it.checked) : null,
+        disabled: it.disabled,
         onclick: () => {
           closeMenu();
           anchor.focus();
           it.run();
         },
       },
-      it.checked ? icon(ICONS.check) : h("span", { class: "y3s-icon-spacer" }),
+      checks ? (it.checked ? icon(ICONS.check) : h("span", { class: "y3s-icon-spacer" })) : null,
       h("span", { text: it.label }),
-    ),
-  );
-  const menu = h("div", { class: "y3s-menu", role: "menu" }, buttons);
+    );
+    if (!it.disabled) buttons.push(b);
+    return b;
+  });
+  const menu = h("div", { class: "y3s-menu", role: "menu" }, nodes);
   menu.addEventListener("keydown", (e) => {
     const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    if (e.key === "ArrowDown") buttons[(i + 1) % buttons.length].focus();
-    else if (e.key === "ArrowUp") buttons[(i - 1 + buttons.length) % buttons.length].focus();
+    if (e.key === "ArrowDown") buttons[(i + 1) % buttons.length]?.focus();
+    else if (e.key === "ArrowUp") buttons[(i - 1 + buttons.length) % buttons.length]?.focus();
     else if (e.key === "Escape" || e.key === "Tab") {
       closeMenu();
       anchor.focus();

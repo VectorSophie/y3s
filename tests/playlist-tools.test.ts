@@ -404,3 +404,153 @@ describe("misc", () => {
     expect(applyChanges(s, [])).toEqual(s);
   });
 });
+
+// ───────────────────────────────────────────────────────── phases
+
+const headers = () => [...document.querySelectorAll<HTMLElement>(".y3s-phase")];
+const phaseIdAt = (i: number) => headers()[i].dataset.y3sKey!.slice(1);
+const visibleIds = () =>
+  [...document.querySelectorAll("ytd-playlist-video-renderer:not(.y3s-removed):not(.y3s-collapsed):not(.y3s-hidden)")].map(
+    (r) => /v=([^&]+)/.exec(r.querySelector("a")!.getAttribute("href")!)![1],
+  );
+const layout = () =>
+  [...document.querySelector("ytd-playlist-video-list-renderer #contents")!.children].map((el) =>
+    el.classList.contains("y3s-phase")
+      ? `[${el.querySelector(".y3s-phase-name")!.textContent}]`
+      : /v=([^&]+)/.exec(el.querySelector("a")!.getAttribute("href")!)![1],
+  );
+
+describe("phases", () => {
+  beforeEach(() => {
+    (chrome.storage.local as unknown as { data: Record<string, unknown> }).data = {};
+  });
+
+  test("split makes collapsed phases with counts; expanding shows the videos", async () => {
+    const v = vids(7);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    await tools.splitInto(3);
+    expect(tools.phaseNames()).toEqual(["Videos 1–3", "Videos 4–6", "Videos 7–7"]);
+    expect(headers().every((h) => h.classList.contains("y3s-folded"))).toBe(true);
+    expect(visibleIds()).toEqual([]);
+    expect(headers()[1].textContent).toContain("3 videos");
+    click(headers()[2]);
+    expect(visibleIds()).toEqual(["v6"]);
+  });
+
+  test("filtering finds videos inside folded phases", async () => {
+    const v = vids(6);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    await tools.splitInto(3);
+    tools.setQuery("Video 4");
+    expect(visibleIds()).toEqual(["v4"]);
+    expect(headers()[0].hidden).toBe(true);
+    expect(headers()[1].textContent).toContain("1 of 3 videos");
+    tools.setQuery("");
+    expect(visibleIds()).toEqual([]);
+  });
+
+  test("moving videos into another phase saves the new order", async () => {
+    const v = vids(6);
+    const be = new FakeBackend(tracks(v));
+    tools = new PlaylistTools(mount(v), be);
+    await ready(tools);
+    await tools.splitInto(3);
+    tools.setAllCollapsed(false);
+    click(rowEl(4).querySelector(".y3s-cbwrap")!);
+    await tools.moveSelectionToPhase(phaseIdAt(0));
+    expect(layout()).toEqual(["[Videos 1–3]", "v0", "v1", "v2", "v4", "[Videos 4–6]", "v3", "v5"]);
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS + 10);
+    expect(be.order()).toEqual(["v0", "v1", "v2", "v4", "v3", "v5"]);
+    expect(be.applied[0]).toHaveLength(1);
+  });
+
+  test("moving a phase block and sorting inside a phase are saved", async () => {
+    const v = [
+      { id: "a", title: "Cherry" },
+      { id: "b", title: "apple" },
+      { id: "c", title: "Banana" },
+      { id: "d", title: "Date" },
+      { id: "e", title: "Elder" },
+    ];
+    const be = new FakeBackend(tracks(v));
+    tools = new PlaylistTools(mount(v), be);
+    await ready(tools);
+    await tools.splitInto(3);
+    await tools.movePhaseTo(phaseIdAt(1), "top");
+    expect(layout()).toEqual(["[Videos 4–5]", "d", "e", "[Videos 1–3]", "a", "b", "c"]);
+    await tools.sortPhase(phaseIdAt(1), "title");
+    expect(layout()).toEqual(["[Videos 4–5]", "d", "e", "[Videos 1–3]", "b", "c", "a"]);
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS + 10);
+    expect(be.order()).toEqual(["d", "e", "b", "c", "a"]);
+  });
+
+  test("new phase from a scattered selection gathers it after the first video's section", async () => {
+    const v = vids(5);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v), { signedIn: true, owned: false }));
+    await ready(tools);
+    click(rowEl(1).querySelector(".y3s-cbwrap")!);
+    click(rowEl(3).querySelector(".y3s-cbwrap")!);
+    await tools.newPhaseFromSelection();
+    (document.querySelector(".y3s-phase-input") as HTMLInputElement).value = "Keepers";
+    document.querySelector(".y3s-phase-input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(layout()).toEqual(["v0", "v2", "v4", "[Keepers]", "v1", "v3"]);
+    expect(snackText()).toContain("only on this page");
+  });
+
+  test("start phase here splits without moving; remove phase keeps the videos; undo", async () => {
+    const v = vids(4);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    tools.onKey(key("j"));
+    tools.onKey(key("j"));
+    tools.onKey(key("p"));
+    document.querySelector(".y3s-phase-input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(layout()).toEqual(["v0", "[Phase 1]", "v1", "v2", "v3"]);
+    tools.removePhase(phaseIdAt(0));
+    expect(layout()).toEqual(["v0", "v1", "v2", "v3"]);
+    tools.undo();
+    expect(layout()).toEqual(["v0", "[Phase 1]", "v1", "v2", "v3"]);
+  });
+
+  test("phases are kept per playlist and come back folded", async () => {
+    const v = vids(6);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    await tools.splitInto(2);
+    tools.setAllCollapsed(false);
+    tools.destroy();
+    tools = null;
+    expect(document.querySelector(".y3s-phase")).toBeNull();
+
+    tools = new PlaylistTools(document.querySelector("ytd-playlist-video-list-renderer")!, new FakeBackend(tracks(v)));
+    await ready(tools);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(tools.phaseNames()).toEqual(["Videos 1–2", "Videos 3–4", "Videos 5–6"]);
+    expect(layout()).toEqual(["[Videos 1–2]", "v0", "v1", "[Videos 3–4]", "v2", "v3", "[Videos 5–6]", "v4", "v5"]);
+    expect(headers().every((h) => h.classList.contains("y3s-folded"))).toBe(true);
+  });
+
+  test("clear all phases forgets them", async () => {
+    const v = vids(4);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    await tools.splitInto(2);
+    tools.clearPhases();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(headers()).toHaveLength(0);
+    expect(Object.keys((chrome.storage.local as unknown as { data: object }).data)).toHaveLength(0);
+  });
+
+  test("dividers YouTube re-renders away are put back", async () => {
+    const v = vids(4);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    await tools.splitInto(2);
+    await vi.advanceTimersByTimeAsync(400);
+    headers().forEach((h) => h.remove());
+    await vi.advanceTimersByTimeAsync(200);
+    expect(layout()).toEqual(["[Videos 1–2]", "v0", "v1", "[Videos 3–4]", "v2", "v3"]);
+  });
+});

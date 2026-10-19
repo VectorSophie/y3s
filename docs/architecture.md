@@ -35,6 +35,16 @@ inserts a filter bar above them, styled with YouTube's theme variables.
    error, reporting how many succeeded. The page updates its server list from
    what actually applied.
 
+## Phases
+
+Dividers are real elements placed among YouTube's rows. All phase operations
+(`core/phases.ts`) work on the sequence of row keys and divider markers and
+the page re-applies the result, so membership is purely positional and the
+save path above sees only the row order. Each divider is stored per playlist
+in `chrome.storage.local` as "after this row" (playlistItemId, or video id +
+which copy), restored folded on load, re-placed as lazy-loaded rows arrive,
+and put back if YouTube re-renders the list.
+
 ## Guards
 
 - Ownership: `playlists.list` channel vs `channels.list?mine=true`. Not yours

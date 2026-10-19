@@ -17,9 +17,29 @@ your light or dark theme.
   (including the ones YouTube hides, with **Remove N unavailable**), and
   **Sort**: title, channel, shortest, longest, reverse, shuffle, or back to
   playlist order.
+- **Drag-select:** press the left mouse button on any row and drag across
+  videos; the page scrolls when you reach the top or bottom edge. Hold
+  Ctrl/Shift to add to the selection. A click without dragging still opens
+  the video, and YouTube's own reorder handle works as before.
 - **Select** with the checkbox that appears on hover, shift-click for a range,
   or the keyboard. The bar becomes **N selected · Play · Move to top ·
-  Move to bottom · Remove**.
+  Move to bottom · Move to phase · Remove**.
+- **Phases:** named dividers that split a long playlist into sections, so you
+  can fold away the 300 videos you're not touching. Everything below a
+  divider, until the next one, is in that phase.
+  - Create them from **Phases** → *Split into phases of 25/50/100*, *New phase
+    from selection* (gathers the selected videos), or *Start phase at focused
+    video* (`p`).
+  - Phases open **folded**; click a header to unfold. Headers show the count
+    and runtime. Filtering looks inside folded phases.
+  - Each header's ⋮ menu: Play, Shuffle play, Select all, Sort this phase,
+    Move up/down/top/bottom, Rename (or double-click the name), Remove phase
+    (keeps the videos).
+  - **Move to phase** sends the selection to the end of a phase.
+  - Moving videos or whole phases is a real reorder, saved to YouTube like any
+    other move. The dividers themselves live only in y3s, saved per playlist
+    on this computer until you choose *Clear all phases*. The main **Sort**
+    sorts inside each phase.
 - **Play** a selection as a temporary queue (first 50).
 - **Load all** pulls in the rest of a long playlist so filters cover it.
 - Total runtime next to the video count.
@@ -54,6 +74,7 @@ Data API. Undo inside that window and nothing is sent.
 | `x` | Select / deselect | `z` | Undo |
 | `Enter` | Play | `Esc` | Clear filter or selection |
 | `/` | Filter | `g` / `Shift`+`g` | First / last video |
+| `p` | New phase (selection / here) | `c` / `Shift`+`c` | Fold this phase / all phases |
 | `?` | All shortcuts | | |
 
 No extra keys on the watch page, where YouTube's player shortcuts apply.
@@ -212,15 +233,16 @@ skips Google sign-in; never load it in your own browser.
 ### Layout
 
 - `src/core` — pure logic: filtering and sorting, matching page rows to
-  playlist items, planning the fewest API writes.
+  playlist items, planning the fewest API writes, phase sections.
 - `src/content` — page integration: `playlist-tools.ts`, `panel-tools.ts`,
-  `yt-dom.ts` (every YouTube selector), and `ui/` (snackbar, menu, dialogs).
+  `drag-select.ts`, `phase-store.ts`, `yt-dom.ts` (every YouTube selector),
+  and `ui/` (snackbar, menu, dialogs).
 - `src/background` — `chrome.identity` sign-in and the YouTube Data API client.
 - `src/styles/content.css` — styles built on YouTube's own theme variables.
 
 ## Roadmap
 
-- Drag a selected block with YouTube's drag handles.
+- Drag a selected block to a new position.
 - Copy/move videos to another playlist.
 - Play the filtered results; shuffle without repeats.
 - Optional saving through YouTube's own endpoints (no Google Cloud setup).

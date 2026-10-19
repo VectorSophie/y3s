@@ -29,7 +29,8 @@
     }
   ],
   "permissions": [
-    "identity"
+    "identity",
+    "storage"
   ],
   "host_permissions": [
     "https://www.googleapis.com/*"

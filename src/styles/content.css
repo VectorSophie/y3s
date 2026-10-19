@@ -551,3 +551,112 @@ ytd-playlist-panel-video-renderer.y3s-flash {
 .y3s-cbwrap .y3s-cb {
   box-sizing: border-box;
 }
+
+/* ---------- drag-select */
+.y3s-marquee {
+  position: absolute;
+  z-index: 2200;
+  pointer-events: none;
+  border: 1px solid var(--y3s-focus-border);
+  background: rgba(28, 98, 185, 0.12);
+  border-radius: 4px;
+}
+html.y3s-dragging,
+html.y3s-dragging * {
+  user-select: none !important;
+  cursor: default !important;
+}
+
+/* ---------- phases (dividers in the list) */
+.y3s-collapsed {
+  display: none !important;
+}
+.y3s-phase {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 56px;
+  margin: 12px 0 4px;
+  padding: 4px 4px 4px 0;
+  border-top: 1px solid var(--y3s-layer-hover);
+  font-family: "Roboto", "Arial", sans-serif;
+  color: var(--y3s-text);
+  cursor: pointer;
+  user-select: none;
+  scroll-margin-top: 170px;
+}
+.y3s-phase:first-child {
+  margin-top: 0;
+}
+.y3s-phase.y3s-folded {
+  margin: 0;
+}
+.y3s-phase.y3s-folded + .y3s-phase {
+  border-top-color: transparent;
+}
+.y3s-phase:hover {
+  background: var(--y3s-layer);
+  border-radius: 12px;
+}
+.y3s-phase .y3s-icon-btn {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.y3s-phase-toggle .y3s-icon {
+  transition: transform 0.15s;
+}
+.y3s-phase.y3s-folded .y3s-phase-toggle .y3s-icon {
+  transform: rotate(-90deg);
+}
+.y3s-phase-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.y3s-phase-name {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.y3s-phase-meta {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--y3s-text2);
+  white-space: nowrap;
+}
+.y3s-phase-input {
+  font: 700 20px/28px "Roboto", "Arial", sans-serif;
+  color: var(--y3s-text);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid var(--y3s-text);
+  outline: none;
+  padding: 0;
+  min-width: 0;
+  width: min(420px, 100%);
+}
+.y3s-menu-heading {
+  padding: 8px 16px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--y3s-text2);
+}
+.y3s-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.y3s-menu-item:disabled:hover {
+  background: transparent !important;
+}
+.y3s-menu {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+}

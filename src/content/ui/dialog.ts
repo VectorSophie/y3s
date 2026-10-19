@@ -52,6 +52,9 @@ export const SHORTCUTS: [string[], string][] = [
   [["t"], "Move selection to top"],
   [["b"], "Move selection to bottom"],
   [["Delete"], "Remove selection"],
+  [["p"], "New phase (from selection, or at focused video)"],
+  [["c"], "Collapse the focused video's phase"],
+  [["Shift", "c"], "Collapse or expand all phases"],
   [["z"], "Undo"],
   [["Esc"], "Clear filter or selection"],
   [["?"], "Show keyboard shortcuts"],
@@ -66,6 +69,7 @@ export function openHelp(): void {
       h("h2", { text: "Keyboard shortcuts" }),
       h("button", { class: "y3s-icon-btn", "aria-label": "Close", onclick: close }, icon(ICONS.close)),
     ),
+    h("p", { class: "y3s-dialog-text", text: "Drag across videos with the left mouse button to select them. Hold Ctrl or Shift to add to the selection." }),
     h(
       "div",
       { class: "y3s-sc-list" },

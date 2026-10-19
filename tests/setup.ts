@@ -8,6 +8,21 @@ import { vi } from "vitest";
     getManifest: () => ({ version: "0.4.0", oauth2: { client_id: "test.apps.googleusercontent.com" } }),
   },
   tabs: { sendMessage: vi.fn(async () => undefined) },
+  storage: {
+    local: {
+      data: {} as Record<string, unknown>,
+      async get(key: string) {
+        const d = (this as { data: Record<string, unknown> }).data;
+        return key in d ? { [key]: structuredClone(d[key]) } : {};
+      },
+      async set(items: Record<string, unknown>) {
+        Object.assign((this as { data: Record<string, unknown> }).data, structuredClone(items));
+      },
+      async remove(key: string) {
+        delete (this as { data: Record<string, unknown> }).data[key];
+      },
+    },
+  },
   identity: {
     getAuthToken: vi.fn(async () => ({ token: "tok" })),
     removeCachedAuthToken: vi.fn(async () => undefined),

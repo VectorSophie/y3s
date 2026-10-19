@@ -73,6 +73,7 @@ await ctx.route("https://www.youtube.com/**", (route) => {
     const cur = Math.max(0, vis.findIndex((i) => i.videoId === u.searchParams.get("v")));
     return route.fulfill({ contentType: "text/html", body: watchPage(state.items, list, cur) });
   }
+  if (u.pathname === "/watch_videos") return route.fulfill({ contentType: "text/html", body: "<!doctype html><title>queue</title>" });
   return route.fulfill({ status: 204, body: "" });
 });
 
@@ -179,6 +180,146 @@ try {
   await waitFor(async () => (await pageIds()).length === state.items.length, 30000);
   check(JSON.stringify(await pageIds()) === JSON.stringify(serverIds()), "after reload the page shows the saved order");
   await waitFor(async () => !/Unavailable ·/.test(await page.textContent(".y3s-bar")));
+
+  // ── drag-select with the mouse
+  await page.reload();
+  await page.waitForSelector(".y3s-bar");
+  await waitFor(async () => !/Sign in|Retry/.test(await page.textContent(".y3s-stats")), 5000);
+  const titleBox = async (i) => {
+    const l = page.locator("ytd-playlist-video-renderer #video-title").nth(i);
+    await l.scrollIntoViewIfNeeded();
+    return l.boundingBox();
+  };
+  await page.evaluate(() => scrollTo(0, 0));
+  const selectedCount = () => page.$$eval("ytd-playlist-video-renderer.y3s-selected", (e) => e.length);
+  {
+    const a = await titleBox(2);
+    const b = await titleBox(5);
+    await page.mouse.move(a.x + 40, a.y + 5);
+    await page.mouse.down();
+    for (let s = 1; s <= 8; s++) await page.mouse.move(a.x + 40 + s * 10, a.y + 5 + ((b.y - a.y) * s) / 8);
+    await shot("10-drag-select");
+    await page.mouse.up();
+    check((await selectedCount()) === 4, "dragging over 4 rows selects them", String(await selectedCount()));
+    check(new URL(page.url()).pathname === "/playlist", "dragging from a title link doesn't open the video");
+  }
+  {
+    const a = await titleBox(8);
+    const b = await titleBox(9);
+    await page.keyboard.down("Control");
+    await page.mouse.move(a.x + 300, a.y + 5);
+    await page.mouse.down();
+    for (let s = 1; s <= 5; s++) await page.mouse.move(a.x + 300, a.y + 5 + ((b.y - a.y) * s) / 5);
+    await page.mouse.up();
+    await page.keyboard.up("Control");
+    check((await selectedCount()) === 6, "Ctrl+drag adds to the selection", String(await selectedCount()));
+  }
+  {
+    // A fresh drag replaces the selection, and holding at the bottom edge scrolls.
+    await page.evaluate(() => scrollTo(0, 0));
+    const a = await titleBox(0);
+    await page.mouse.move(a.x + 200, a.y + 5);
+    await page.mouse.down();
+    await page.mouse.move(a.x + 200, a.y + 60, { steps: 4 });
+    await page.mouse.move(a.x + 200, 895, { steps: 6 });
+    await sleep(1200);
+    await page.mouse.up();
+    const n = await selectedCount();
+    check(n > 10 && (await page.evaluate(() => scrollY)) > 200, "dragging to the bottom edge auto-scrolls and keeps selecting", `selected=${n}`);
+  }
+  await page.keyboard.press("Escape");
+  {
+    const a = await titleBox(0);
+    await page.evaluate(() => scrollTo(0, 0));
+    const first = (await pageIds())[0];
+    const t = await titleBox(0);
+    await page.mouse.click(t.x + 20, t.y + 5);
+    await page.waitForURL(/\/watch\?/);
+    check(page.url().includes(`v=${first}`), "a plain click still opens the video");
+    await page.goBack();
+    await page.waitForSelector(".y3s-bar");
+    void a;
+  }
+
+  // ── phases
+  const layout = () =>
+    page.$$eval("ytd-playlist-video-list-renderer #contents > *", (els) =>
+      els
+        .filter((e) => e.matches(".y3s-phase, ytd-playlist-video-renderer:not(.y3s-removed)"))
+        .map((e) =>
+          e.classList.contains("y3s-phase")
+            ? `[${e.querySelector(".y3s-phase-name").textContent}]`
+            : /v=([^&]+)/.exec(e.querySelector("a#video-title").getAttribute("href"))[1],
+        ),
+    );
+  const rowsOfLayout = (l) => l.filter((x) => !x.startsWith("["));
+  await waitFor(async () => !/Sign in|Retry/.test(await page.textContent(".y3s-stats")), 5000);
+  await page.click(".y3s-chip >> text=/^Phases/");
+  await page.click('.y3s-menu-item >> text="Split into phases of 25"');
+  await waitFor(async () => (await page.$$(".y3s-phase")).length === 4, 30000);
+  const total = state.items.length;
+  check((await page.$$(".y3s-phase.y3s-folded")).length === 4, `split ${total} videos into 4 folded phases`);
+  check((await page.$$("ytd-playlist-video-renderer:not(.y3s-collapsed):not(.y3s-removed)")).length === 0, "folded phases hide their videos");
+  await page.evaluate(() => scrollTo(0, 0));
+  await shot("11-phases-folded");
+
+  // expand the last phase, drag-select 3 videos there, move them into the first phase
+  await page.locator(".y3s-phase").nth(3).locator(".y3s-phase-title").click();
+  await page.locator(".y3s-phase").nth(3).scrollIntoViewIfNeeded();
+  const lastRows = page.locator("ytd-playlist-video-renderer:not(.y3s-collapsed):not(.y3s-removed) #video-title");
+  const r0 = await lastRows.nth(0).boundingBox();
+  const r2 = await lastRows.nth(2).boundingBox();
+  await page.mouse.move(r0.x + 250, r0.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(r0.x + 250, r2.y + 5, { steps: 8 });
+  await page.mouse.up();
+  check((await selectedCount()) === 3, "drag-selected 3 videos in the expanded phase");
+  await shot("12-phase-selection");
+  const moved = await page.$$eval("ytd-playlist-video-renderer.y3s-selected #video-title", (as) =>
+    as.map((a) => /v=([^&]+)/.exec(a.getAttribute("href"))[1]),
+  );
+  let w2 = state.writes.length;
+  await page.click('.y3s-sel-actions >> text="Move to phase"');
+  await page.click('.y3s-menu-item >> text="Videos 1–25"');
+  let lay = await layout();
+  const p2 = lay.indexOf("[Videos 26–50]");
+  check(JSON.stringify(lay.slice(p2 - 3, p2)) === JSON.stringify(moved), "videos moved to the end of the first phase");
+  check((await waitSaved(w2, "move to phase")) === 3, "move to phase took 3 writes");
+  check(JSON.stringify(serverIds()) === JSON.stringify(rowsOfLayout(await layout())), "YouTube order matches the phases");
+
+  // move the last phase to the top with its menu
+  w2 = state.writes.length;
+  await page.locator(".y3s-phase").nth(3).locator('[aria-label="Phase actions"]').click();
+  await shot("13-phase-menu");
+  await page.click('.y3s-menu-item >> text="Move to top"');
+  lay = await layout();
+  check(lay[0] === "[Videos 76–95]", "last phase is now first", lay[0]);
+  await waitSaved(w2, "move phase to top");
+  check(JSON.stringify(serverIds()) === JSON.stringify(rowsOfLayout(await layout())), "YouTube order matches after moving the phase");
+
+  // phases survive a reload, folded
+  const layoutBefore = await layout();
+  await page.reload();
+  await page.waitForSelector(".y3s-bar");
+  await page.click(".y3s-link >> text=Load all");
+  await waitFor(async () => (await page.$$(".y3s-phase")).length === 4 && !(await page.$(".y3s-link:not([hidden]) >> text=Load all")), 30000);
+  await sleep(300);
+  check(JSON.stringify(await layout()) === JSON.stringify(layoutBefore), "phases come back after a reload in the same places");
+  check((await page.$$(".y3s-phase.y3s-folded")).length === 4, "and start folded");
+
+  // play a phase
+  const firstPhaseIds = rowsOfLayout((await layout()).slice(0, (await layout()).indexOf("[Videos 1–25]")));
+  await page.locator(".y3s-phase").nth(0).locator('[aria-label="Phase actions"]').click();
+  await page.click('.y3s-menu-item >> text="Play phase"');
+  await page.waitForURL(/watch_videos/);
+  check(new URL(page.url()).searchParams.get("video_ids") === firstPhaseIds.join(","), "Play phase queues exactly that phase's videos");
+  await page.goBack();
+  await page.waitForSelector(".y3s-bar");
+
+  // clear them
+  await page.click(".y3s-chip >> text=/^Phases/");
+  await page.click('.y3s-menu-item >> text="Clear all phases"');
+  check((await page.$$(".y3s-phase")).length === 0, "Clear all phases removes them");
 
   // ── light theme look
   dark = false;

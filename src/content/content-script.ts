@@ -48,7 +48,10 @@ function main(): void {
   );
   window.addEventListener("yt-navigate-start", () => state.playlist?.flushOnLeave());
   window.addEventListener("yt-navigate-finish", () => setTimeout(tick, 50));
-  window.addEventListener("pagehide", () => state.playlist?.flushOnLeave());
+  window.addEventListener("pagehide", () => {
+    state.playlist?.flushOnLeave();
+    state.playlist?.persistNow();
+  });
   setInterval(tick, 1000);
   tick();
 }
