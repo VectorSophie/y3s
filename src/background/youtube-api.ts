@@ -3,7 +3,7 @@
 
 import { API_BASE, PAGE_SIZE } from "../shared/constants";
 import { apiError, formatDuration } from "../shared/utils";
-import type { ApiError, PlaylistSnapshot, Track } from "../shared/types";
+import type { ApiError, PlaylistAccess, PlaylistSnapshot, Track } from "../shared/types";
 import { getAuthToken, invalidateToken } from "./auth";
 
 interface PlaylistItemsResponse {
@@ -22,10 +22,13 @@ interface PlaylistItemsResponse {
 }
 
 /**
- * Fetch every page of a playlist's items, then enrich with video durations.
+ * Fetch every page of a playlist's items (1 quota unit per 50 items).
+ * Durations cost one more unit per 50 and are only fetched on request; the
+ * page already shows them.
  */
 export async function fetchPlaylistItems(
   playlistId: string,
+  opts: { durations?: boolean } = {},
 ): Promise<PlaylistSnapshot> {
   const items: Track[] = [];
   let pageToken: string | undefined;
@@ -58,7 +61,7 @@ export async function fetchPlaylistItems(
     pageToken = data.nextPageToken;
   } while (pageToken);
 
-  await enrichDurations(items);
+  if (opts.durations) await enrichDurations(items);
 
   return {
     playlistId,
@@ -67,16 +70,38 @@ export async function fetchPlaylistItems(
   };
 }
 
-export async function getPlaylistMetadata(
-  playlistId: string,
-): Promise<{ title: string }> {
+let myChannelId: Promise<string> | null = null;
+
+/** The signed-in user's channel id (cached for the worker's lifetime). */
+function getMyChannelId(): Promise<string> {
+  myChannelId ??= authedGet<{ items?: Array<{ id: string }> }>(`/channels?part=id&mine=true`)
+    .then((d) => {
+      const id = d.items?.[0]?.id;
+      if (!id) throw apiError("NOT_OWNER", "Your Google account has no YouTube channel.");
+      return id;
+    })
+    .catch((e) => {
+      myChannelId = null;
+      throw e;
+    });
+  return myChannelId;
+}
+
+/** Forget cached identity (after sign-out or a token change). */
+export function resetIdentity(): void {
+  myChannelId = null;
+}
+
+/** Title of a playlist and whether the signed-in user owns it. */
+export async function getPlaylistAccess(playlistId: string): Promise<PlaylistAccess> {
   const params = new URLSearchParams({ part: "snippet", id: playlistId });
-  const data = await authedGet<{ items?: Array<{ snippet: { title: string } }> }>(
-    `/playlists?${params}`,
-  );
-  const title = data.items?.[0]?.snippet?.title;
-  if (!title) throw apiError("NOT_FOUND", "");
-  return { title };
+  const [data, mine] = await Promise.all([
+    authedGet<{ items?: Array<{ snippet: { title: string; channelId: string } }> }>(`/playlists?${params}`),
+    getMyChannelId(),
+  ]);
+  const snip = data.items?.[0]?.snippet;
+  if (!snip) throw apiError("NOT_FOUND", "");
+  return { title: snip.title, owned: snip.channelId === mine };
 }
 
 export async function deletePlaylistItem(playlistItemId: string): Promise<void> {

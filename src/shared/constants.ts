@@ -1,37 +1,27 @@
-// App-wide constants and design/quota tokens.
+// App-wide constants.
 
-export const APP_ID = "y3s";
-export const ROOT_ELEMENT_ID = "y3s-root";
+declare const __Y3S_API_BASE__: string | undefined;
 
-/** YouTube Data API v3 base. */
-export const API_BASE = "https://www.googleapis.com/youtube/v3";
+/** YouTube Data API v3 base. Test builds point this at a local fake server. */
+export const API_BASE =
+  typeof __Y3S_API_BASE__ === "string" && __Y3S_API_BASE__
+    ? __Y3S_API_BASE__
+    : "https://www.googleapis.com/youtube/v3";
 
-/** Quota cost per operation, in API units (see docs/research-notes.md). */
-export const QUOTA_COST = {
-  list: 1,
-  delete: 50,
-  update: 50,
-  insert: 50,
-} as const;
+/** Quota cost per call, in API units. */
+export const QUOTA_COST = { list: 1, delete: 50, update: 50, insert: 50 } as const;
+
+/** Default daily quota for a Google Cloud project. */
+export const DAILY_QUOTA = 10_000;
 
 /** Max items YouTube returns per playlistItems.list page. */
 export const PAGE_SIZE = 50;
 
-/** chrome.storage.local key helpers. */
-export const storageKeys = {
-  phases: (playlistId: string) => `y3s:phases:${playlistId}`,
-  prefs: () => "y3s:prefs",
-};
+/** How long an edit stays undoable before it is saved to YouTube. */
+export const SAVE_DELAY_MS = 6000;
 
-/** Default phase colors (subtle, theme-aligned). */
-export const PHASE_COLORS = [
-  "#e0344b",
-  "#e6a23c",
-  "#3fb27f",
-  "#4a8cff",
-  "#9d6bdd",
-  "#d96aa8",
-];
+/** Batches with more writes than this ask before saving. */
+export const CONFIRM_WRITES_OVER = 20;
 
-/** A move/sort over this many writes is flagged "high" risk in the planner. */
-export const HIGH_RISK_WRITE_THRESHOLD = 25;
+/** watch_videos accepts up to this many ids. */
+export const MAX_QUEUE_IDS = 50;

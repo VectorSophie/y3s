@@ -1,91 +1,86 @@
-// Service worker: routes typed messages from the content script to auth + API,
-// and toggles the drawer when the toolbar action is clicked.
+// Service worker: routes typed messages from the content script to auth and
+// the YouTube Data API. Tokens never leave this context.
 
-import type { Request, ResponseData } from "../shared/messages";
-import type { ApiError, Result } from "../shared/types";
+import type { Command, Request } from "../shared/messages";
+import type { ApiError, ApplyResult, Change, Result } from "../shared/types";
 import { apiError } from "../shared/utils";
 import { clearAuthToken, getAuthToken, isConfigured } from "./auth";
 import {
   deletePlaylistItem,
   fetchPlaylistItems,
-  getPlaylistMetadata,
-  insertPlaylistItem,
+  getPlaylistAccess,
+  resetIdentity,
   updatePlaylistItemPosition,
 } from "./youtube-api";
 
-chrome.runtime.onMessage.addListener((message: Request, _sender, sendResponse) => {
-  handle(message)
-    .then(sendResponse)
-    .catch((err) => sendResponse(fail(toApiError(err))));
-  // Keep the message channel open for the async response.
-  return true;
+chrome.runtime.onMessage.addListener((message: Request, sender, sendResponse) => {
+  handle(message, sender.tab?.id)
+    .then((data) => sendResponse({ ok: true, data } satisfies Result<unknown>))
+    .catch((err) => sendResponse({ ok: false, error: toApiError(err) } satisfies Result<unknown>));
+  return true; // async response
 });
 
-// Toolbar button toggles the drawer in the active tab.
-chrome.action.onClicked.addListener((tab) => {
-  if (tab.id != null) {
-    chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_DRAWER" }).catch(() => {
-      // Content script not present on this page (not a playlist page) — ignore.
-    });
-  }
-});
-
-async function handle(message: Request): Promise<Result<unknown>> {
+async function handle(message: Request, tabId?: number): Promise<unknown> {
   switch (message.type) {
     case "AUTH_STATUS": {
       let signedIn = false;
-      if (isConfigured()) {
-        try {
-          await getAuthToken(false);
-          signedIn = true;
-        } catch {
-          signedIn = false;
-        }
-      }
-      return ok<"AUTH_STATUS">({ signedIn, configured: isConfigured() });
+      if (isConfigured()) signedIn = await getAuthToken(false).then(() => true, () => false);
+      return { signedIn, configured: isConfigured() };
     }
-
     case "AUTH_GET_TOKEN":
-      return ok<"AUTH_GET_TOKEN">({ token: await getAuthToken(message.interactive) });
-
+      await getAuthToken(message.interactive);
+      resetIdentity();
+      return { signedIn: true };
     case "AUTH_CLEAR":
-      return ok<"AUTH_CLEAR">({ cleared: await clearAuthToken() });
-
+      resetIdentity();
+      return { cleared: await clearAuthToken() };
     case "FETCH_PLAYLIST_ITEMS":
-      return ok<"FETCH_PLAYLIST_ITEMS">(await fetchPlaylistItems(message.playlistId));
-
-    case "GET_PLAYLIST_METADATA":
-      return ok<"GET_PLAYLIST_METADATA">(
-        await getPlaylistMetadata(message.playlistId),
-      );
-
-    case "DELETE_PLAYLIST_ITEM":
-      await deletePlaylistItem(message.playlistItemId);
-      return ok<"DELETE_PLAYLIST_ITEM">({ playlistItemId: message.playlistItemId });
-
-    case "UPDATE_PLAYLIST_ITEM_POSITION":
-      await updatePlaylistItemPosition(message);
-      return ok<"UPDATE_PLAYLIST_ITEM_POSITION">({
-        playlistItemId: message.playlistItemId,
-        position: message.position,
-      });
-
-    case "INSERT_PLAYLIST_ITEM": {
-      const { playlistItemId } = await insertPlaylistItem(message);
-      return ok<"INSERT_PLAYLIST_ITEM">({ playlistItemId });
-    }
-
-    default:
-      return fail(apiError("UNKNOWN", "Unknown request."));
+      return fetchPlaylistItems(message.playlistId);
+    case "GET_PLAYLIST_ACCESS":
+      return getPlaylistAccess(message.playlistId);
+    case "APPLY_CHANGES":
+      return enqueue(message.playlistId, () => applyChanges(message.playlistId, message.changes, tabId));
   }
 }
 
-function ok<K extends keyof ResponseData>(data: ResponseData[K]): Result<ResponseData[K]> {
-  return { ok: true, data };
+// Writes to one playlist run one batch at a time: positions in a batch assume
+// the batch before it has finished.
+const queues = new Map<string, Promise<unknown>>();
+function enqueue<T>(playlistId: string, job: () => Promise<T>): Promise<T> {
+  const prev = queues.get(playlistId) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(job);
+  queues.set(playlistId, next);
+  next.finally(() => {
+    if (queues.get(playlistId) === next) queues.delete(playlistId);
+  });
+  return next;
 }
 
-function fail(error: ApiError): Result<never> {
-  return { ok: false, error };
+/** Apply changes in order, stopping at the first failure. Keeps running even
+ *  if the tab navigates away. */
+export async function applyChanges(playlistId: string, changes: Change[], tabId?: number): Promise<ApplyResult> {
+  const progress = (done: number) => {
+    if (tabId == null) return;
+    const cmd: Command = { type: "APPLY_PROGRESS", playlistId, done, total: changes.length };
+    chrome.tabs.sendMessage(tabId, cmd).catch(() => undefined);
+  };
+  for (let i = 0; i < changes.length; i++) {
+    const c = changes[i];
+    try {
+      if (c.kind === "delete") await deletePlaylistItem(c.playlistItemId);
+      else
+        await updatePlaylistItemPosition({
+          playlistItemId: c.playlistItemId,
+          playlistId,
+          videoId: c.videoId,
+          position: c.position,
+        });
+    } catch (err) {
+      return { applied: i, error: toApiError(err) };
+    }
+    progress(i + 1);
+  }
+  return { applied: changes.length };
 }
 
 function toApiError(err: unknown): ApiError {

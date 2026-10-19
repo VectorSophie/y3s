@@ -6,8 +6,13 @@ import type { ApiError } from "../shared/types";
 
 const PLACEHOLDER = "YOUR_OAUTH_CLIENT_ID";
 
+/** End-to-end test builds skip Google sign-in and use a fixed token. */
+declare const __Y3S_E2E__: boolean | undefined;
+const E2E = typeof __Y3S_E2E__ === "boolean" && __Y3S_E2E__;
+
 /** True only when a real OAuth client id has been put in the manifest. */
 export function isConfigured(): boolean {
+  if (E2E) return true;
   const oauth = chrome.runtime.getManifest().oauth2;
   const clientId = oauth?.client_id ?? "";
   return Boolean(clientId) && !clientId.startsWith(PLACEHOLDER);
@@ -20,6 +25,7 @@ export function isConfigured(): boolean {
  * Throws a typed ApiError so callers can branch on the code.
  */
 export async function getAuthToken(interactive: boolean): Promise<string> {
+  if (E2E) return "e2e-token";
   if (!isConfigured()) {
     throw asApiError("AUTH_NOT_CONFIGURED");
   }
@@ -57,6 +63,7 @@ export async function clearAuthToken(): Promise<boolean> {
  * getAuthToken fetches a fresh one.
  */
 export async function invalidateToken(token: string): Promise<void> {
+  if (E2E) return;
   try {
     await chrome.identity.removeCachedAuthToken({ token });
   } catch {

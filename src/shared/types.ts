@@ -1,8 +1,8 @@
-// Core data models for y3s. Shared between content script and service worker.
+// Core data models shared by the content script and the service worker.
 
-/** A single playlist entry, normalised from the YouTube API. */
+/** A single playlist entry as the YouTube Data API reports it. */
 export interface Track {
-  /** The playlistItem resource id — used for delete/update. Distinct from videoId. */
+  /** The playlistItem resource id, used for delete/update. Distinct from videoId. */
   playlistItemId: string;
   videoId: string;
   title: string;
@@ -14,71 +14,28 @@ export interface Track {
   url: string;
 }
 
-/** A point-in-time snapshot of a playlist's items. */
+/** A point-in-time snapshot of a playlist's items, in playlist order. */
 export interface PlaylistSnapshot {
   playlistId: string;
   title?: string;
   items: Track[];
   fetchedAt: number;
-  /** True when the data is the local mock fixture, not the real API. */
-  isMock?: boolean;
-  /** Where the data came from: scraped page DOM vs the YouTube Data API. */
-  source?: "dom" | "api";
 }
 
-/** Extension-only subsection metadata. YouTube playlists are flat; phases live
- *  only in chrome.storage.local. */
-export interface Phase {
-  id: string;
-  playlistId: string;
+/** What the signed-in user may do with a playlist. */
+export interface PlaylistAccess {
   title: string;
-  color?: string;
-  /** Optional anchor: the phase begins before this videoId. */
-  beforeVideoId?: string;
-  /** Tracks assigned to this phase, by videoId. */
-  trackVideoIds?: string[];
-  collapsed?: boolean;
-  createdAt: number;
-  updatedAt: number;
+  owned: boolean;
 }
 
-/** Runtime-only selection. Not persisted. */
-export interface SelectionState {
-  selectedVideoIds: Set<string>;
-  lastSelectedIndex?: number;
-}
+/** One write against the YouTube Data API. */
+export type Change =
+  | { kind: "delete"; playlistItemId: string; videoId: string }
+  | { kind: "move"; playlistItemId: string; videoId: string; position: number };
 
-export type OperationType = "sort" | "move" | "delete" | "phaseOnly";
-
-/** A single concrete API-level action within a plan. */
-export interface Operation {
-  kind: "delete" | "updatePosition" | "insert";
-  playlistItemId?: string;
-  videoId?: string;
-  /** Target position for move/sort operations. */
-  toPosition?: number;
-  /** Human label for the confirmation summary. */
-  label: string;
-}
-
-/** A planned, costed set of operations, produced before anything is applied. */
-export interface OperationPlan {
-  id: string;
-  type: OperationType;
-  description: string;
-  estimatedApiCalls: number;
-  estimatedQuotaCost: number;
-  /** "none" for local-only, up through "high" for full re-sorts. */
-  riskLevel: "none" | "low" | "medium" | "high";
-  affectedVideoIds: string[];
-  operations: Operation[];
-}
-
-/** Result of applying one operation. */
-export interface OperationResult {
-  videoId?: string;
-  playlistItemId?: string;
-  ok: boolean;
+export interface ApplyResult {
+  /** How many changes succeeded, in order, before stopping. */
+  applied: number;
   error?: ApiError;
 }
 
@@ -104,15 +61,3 @@ export interface ApiError {
 
 /** Uniform envelope returned by every background message handler. */
 export type Result<T> = { ok: true; data: T } | { ok: false; error: ApiError };
-
-/** A live YouTube playlist row indexed from the page DOM (v0.3 QoL layer). */
-export interface NativeRow {
-  videoId: string;
-  title: string;
-  channel?: string;
-  durationText?: string;
-  durationSec?: number;
-  index: number;
-  /** The native row element (e.g. ytd-playlist-video-renderer). */
-  el: HTMLElement;
-}
