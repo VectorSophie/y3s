@@ -204,8 +204,9 @@ npm run test:e2e    # builds dist-e2e/ and drives it in headless Chromium
 
 The end-to-end test loads the real extension against stand-in YouTube pages
 and a fake YouTube Data API that keeps state, then checks what was actually
-saved. It needs a Chromium that can load extensions: set `CHROME_PATH`, or
-`PLAYWRIGHT_BROWSERS_PATH` pointing at Playwright's browsers. `dist-e2e/`
+saved. It needs Chromium (Google Chrome won't load extensions from the
+command line): run `npx playwright-core install chromium` once, or set
+`CHROME_PATH` to a Chromium binary. `dist-e2e/`
 skips Google sign-in; never load it in your own browser.
 
 ### Layout

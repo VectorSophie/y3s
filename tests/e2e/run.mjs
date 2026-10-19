@@ -4,11 +4,12 @@
 //
 //   npm run test:e2e
 //
-// Needs a Chromium build that supports extensions. Set CHROME_PATH, or it
-// uses Playwright's Chromium under PLAYWRIGHT_BROWSERS_PATH.
+// Needs Chromium (Google Chrome no longer loads unpacked extensions from the
+// command line). One-time: `npx playwright-core install chromium`, or set
+// CHROME_PATH to a Chromium binary.
 
 import { chromium } from "playwright-core";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,10 +27,12 @@ const OTHER = "PLsomeoneElse";
 
 function chromePath() {
   if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH || join(process.env.HOME, ".cache/ms-playwright");
-  const dir = existsSync(base) && readdirSync(base).find((d) => /^chromium-\d+$/.test(d));
-  if (!dir) throw new Error("No Chromium found. Set CHROME_PATH or PLAYWRIGHT_BROWSERS_PATH.");
-  return join(base, dir, "chrome-linux", "chrome");
+  // Wherever `npx playwright-core install chromium` put it, on any OS.
+  const p = chromium.executablePath();
+  if (!existsSync(p)) {
+    throw new Error("No Chromium found. Run `npx playwright-core install chromium`, or set CHROME_PATH to a Chromium (not Google Chrome) binary.");
+  }
+  return p;
 }
 
 let failures = 0;
