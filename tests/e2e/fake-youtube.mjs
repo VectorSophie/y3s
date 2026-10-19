@@ -204,7 +204,8 @@ export function watchPage(items, playlistId, current) {
     .join("");
   return `<!doctype html><html dark lang="en"><head><meta charset="utf-8"><title>Watch - YouTube</title><style>${THEME}
 ytd-watch-flexy { display:flex; gap:24px; padding:80px 24px 24px }
-#player { flex:1; aspect-ratio:16/9; background:#000; border-radius:12px }
+#player { flex:1; aspect-ratio:16/9; background:#000; border-radius:12px; overflow:hidden }
+#movie_player, #movie_player video { width:100%; height:100% }
 #secondary { flex:0 0 402px }
 ytd-playlist-panel-renderer { display:block; border:1px solid var(--yt-spec-10-percent-layer); border-radius:12px; overflow:hidden }
 #header-contents { padding:12px 16px; background:var(--yt-spec-badge-chip-background) } #header-contents h3 { margin:0; font-size:20px }
@@ -216,7 +217,33 @@ ytd-playlist-panel-video-renderer a { display:flex; gap:8px; color:inherit; text
 #video-title { font-size:14px; line-height:20px; font-weight:500; display:block } #byline { font-size:12px; color:var(--yt-spec-text-secondary) }
 </style></head><body>
 <ytd-masthead><span>☰</span><span class="logo"><b>▶</b>YouTube</span><ytd-searchbox>Search</ytd-searchbox><span class="avatar"></span></ytd-masthead>
-<ytd-watch-flexy><div id="player"></div><div id="secondary"><ytd-playlist-panel-renderer id="playlist"><div id="container">
+<ytd-watch-flexy><div id="player"><div id="movie_player"><video class="html5-main-video" src="/media/clip.wav" autoplay muted></video></div></div><div id="secondary"><ytd-playlist-panel-renderer id="playlist"><div id="container">
 <div id="header-contents"><h3>Late night queue</h3><div class="meta2">You · ${current + 1} / ${visible.length}</div></div>
-<div id="items">${rows}</div></div></ytd-playlist-panel-renderer></div></ytd-watch-flexy></body></html>`;
+<div id="items">${rows}</div></div></ytd-playlist-panel-renderer></div></ytd-watch-flexy>
+<script>
+// Like YouTube: when a video ends, autoplay the next one in the playlist.
+document.querySelector("video").addEventListener("ended", () => {
+  const next = document.querySelectorAll("ytd-playlist-panel-video-renderer")[${current} + 1];
+  if (next) location.href = next.querySelector("a").href;
+});
+</script></body></html>`;
+}
+
+/** A short silent WAV, so the watch page has real media that ends. */
+export function silentWav(seconds = 2, rate = 8000) {
+  const n = Math.round(seconds * rate);
+  const buf = Buffer.alloc(44 + n * 2);
+  buf.write("RIFF", 0);
+  buf.writeUInt32LE(36 + n * 2, 4);
+  buf.write("WAVEfmt ", 8);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20);
+  buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write("data", 36);
+  buf.writeUInt32LE(n * 2, 40);
+  return buf;
 }

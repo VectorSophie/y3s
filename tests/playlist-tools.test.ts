@@ -339,7 +339,7 @@ describe("permissions", () => {
     const labels = [...tools.bar.querySelectorAll<HTMLElement>(".y3s-sel-actions .y3s-btn")]
       .filter((b) => !b.hidden)
       .map((b) => b.textContent);
-    expect(labels).toEqual(["Play"]);
+    expect(labels).toEqual(["Play", "New phase"]);
     await tools.sortBy("title");
     expect(pageOrder()).toEqual(["a", "b"]);
     expect(snackText()).toContain("only on this page");
@@ -553,4 +553,95 @@ describe("phases", () => {
     await vi.advanceTimersByTimeAsync(200);
     expect(layout()).toEqual(["[Videos 1–2]", "v0", "v1", "[Videos 3–4]", "v2", "v3"]);
   });
+});
+
+describe("splitting phases and playing them", () => {
+  beforeEach(() => {
+    (chrome.storage.local as unknown as { data: Record<string, unknown> }).data = {};
+    sessionStorage.clear();
+  });
+
+  test("New phase on one selected video splits its phase there and renumbers range names", async () => {
+    const v = vids(10);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    await tools.splitInto(10);
+    tools.setAllCollapsed(false);
+    click(rowEl(4).querySelector(".y3s-cbwrap")!);
+    await tools.newPhaseFromSelection();
+    expect(layout()).toEqual(["[Videos 1–4]", "v0", "v1", "v2", "v3", "[Videos 5–10]", "v4", "v5", "v6", "v7", "v8", "v9"]);
+    expect(snackText()).toContain("Split Videos 1–10");
+    expect(document.querySelector(".y3s-phase-input")).toBeNull();
+  });
+
+  test("a run of neighbours splits too; a named phase keeps its name and the new one gets renamed", async () => {
+    const v = vids(6);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    tools.onKey(key("j"));
+    tools.onKey(key("p"));
+    const input = document.querySelector(".y3s-phase-input") as HTMLInputElement;
+    input.value = "Chill";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    click(rowEl(3).querySelector(".y3s-cbwrap")!);
+    click(rowEl(4).querySelector(".y3s-cbwrap")!);
+    await tools.newPhaseFromSelection();
+    const nameInput = document.querySelector(".y3s-phase-input") as HTMLInputElement;
+    nameInput.value = "Hype";
+    nameInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(layout()).toEqual(["[Chill]", "v0", "v1", "v2", "[Hype]", "v3", "v4", "v5"]);
+  });
+
+  test("selecting the first video of a phase doesn't add an empty split", async () => {
+    const v = vids(4);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    await tools.splitInto(2);
+    tools.setAllCollapsed(false);
+    click(rowEl(2).querySelector(".y3s-cbwrap")!);
+    await tools.newPhaseFromSelection();
+    expect(headers()).toHaveLength(2);
+    expect(snackText()).toContain("already starts here");
+  });
+
+  test("Loop phase stores the phase's videos with playlist positions and opens the first", async () => {
+    const v = vids(6);
+    tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+    await ready(tools);
+    await tools.splitInto(3);
+    const clicked: string[] = [];
+    document.addEventListener("click", (e) => {
+      const a = (e.target as Element).closest("a");
+      if (a) {
+        e.preventDefault();
+        clicked.push(a.getAttribute("href")!);
+      }
+    });
+    tools.playPhase(phaseIdAt(1), { loop: true });
+    const st = JSON.parse(sessionStorage.getItem("y3s:play")!);
+    expect(st.items).toEqual([
+      { videoId: "v3", index: 4 },
+      { videoId: "v4", index: 5 },
+      { videoId: "v5", index: 6 },
+    ]);
+    expect(st.loop).toBe(true);
+    expect(st.name).toBe("Videos 4–6");
+    expect(clicked[0]).toContain("v=v3");
+  });
+});
+
+test("rows that arrive just before an edit are included in it", async () => {
+  vi.useFakeTimers();
+  const v = vids(6);
+  tools = new PlaylistTools(mount(v.slice(0, 3)), new FakeBackend(tracks(v), { signedIn: true, owned: false }));
+  await ready(tools);
+  const contents = document.querySelector("ytd-playlist-video-list-renderer #contents")!;
+  const tpl = document.createElement("template");
+  tpl.innerHTML = v.slice(3).map((x, i) => rowHtml(x, i + 3)).join("");
+  contents.append(tpl.content); // no time for the observer to run
+  await tools.splitInto(3);
+  expect(layout()).toEqual(["[Videos 1–3]", "v0", "v1", "v2", "[Videos 4–6]", "v3", "v4", "v5"]);
+  await tools.sortBy("reverse");
+  tools.setAllCollapsed(false);
+  expect(layout()).toEqual(["[Videos 1–3]", "v2", "v1", "v0", "[Videos 4–6]", "v5", "v4", "v3"]);
 });

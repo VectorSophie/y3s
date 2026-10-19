@@ -52,7 +52,7 @@ export const SHORTCUTS: [string[], string][] = [
   [["t"], "Move selection to top"],
   [["b"], "Move selection to bottom"],
   [["Delete"], "Remove selection"],
-  [["p"], "New phase (from selection, or at focused video)"],
+  [["p"], "New phase: split at the selection, or gather a scattered one"],
   [["c"], "Collapse the focused video's phase"],
   [["Shift", "c"], "Collapse or expand all phases"],
   [["z"], "Undo"],

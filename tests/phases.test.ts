@@ -116,3 +116,18 @@ describe("saving and restoring", () => {
     expect(pending).toEqual([{ id: "B", after: "zz" }]);
   });
 });
+
+import { isContiguous, isRangeName } from "../src/core/phases";
+describe("contiguity and range names", () => {
+  test("a run inside one section is contiguous; across a divider or with gaps it isn't", () => {
+    expect(isContiguous(base(), new Set(["d"]))).toBe(true);
+    expect(isContiguous(base(), new Set(["c", "d"]))).toBe(true);
+    expect(isContiguous(base(), new Set(["c", "e"]))).toBe(false);
+    expect(isContiguous(base(), new Set(["e", "f"]))).toBe(false);
+    expect(isContiguous(base(), new Set())).toBe(false);
+  });
+  test("range names", () => {
+    expect(isRangeName("Videos 1–25")).toBe(true);
+    expect(isRangeName("Chill")).toBe(false);
+  });
+});

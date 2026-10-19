@@ -17,7 +17,9 @@ import {
 import { inPlaylistOrder, matchRows } from "../core/match";
 import {
   anchorsOf,
+  isContiguous,
   isPhase,
+  isRangeName,
   marker,
   moveRows,
   movePhase,
@@ -32,11 +34,13 @@ import {
   type Anchor,
 } from "../core/phases";
 import { applyChanges, planChanges, type ServerItem } from "../core/plan";
-import { CONFIRM_WRITES_OVER, DAILY_QUOTA, MAX_QUEUE_IDS, QUOTA_COST, SAVE_DELAY_MS } from "../shared/constants";
+import { startPlay, watchUrl, type PlayItem } from "../core/phase-play";
+import { CONFIRM_WRITES_OVER, DAILY_QUOTA, QUOTA_COST, SAVE_DELAY_MS } from "../shared/constants";
 import type { ApiError, Change } from "../shared/types";
 import { count, messageForError } from "../shared/utils";
 import { chromeBackend, type Backend, type ServerTrack } from "./backend";
 import { DragSelect } from "./drag-select";
+import { savePlay } from "./phase-player";
 import { loadPhases, savePhases, type StoredAnchor, type StoredPhase } from "./phase-store";
 import { confirmDialog, isDialogOpen, openHelp } from "./ui/dialog";
 import { h, icon, ICONS, isEditable } from "./ui/dom";
@@ -131,6 +135,7 @@ export class PlaylistTools {
   private moveBtns!: HTMLButtonElement[];
   private removeBtn!: HTMLButtonElement;
   private toPhaseBtn!: HTMLButtonElement;
+  private newPhaseBtn!: HTMLButtonElement;
 
   constructor(list: HTMLElement, private backend: Backend = chromeBackend) {
     this.list = list;
@@ -336,11 +341,25 @@ export class PlaylistTools {
 
   /** Rows and phase dividers in page order, as keys. */
   private seqNow(): string[] {
+    // Rows YouTube added since the last refresh must take part too, or a
+    // reorder would leave them stranded where they are.
+    for (const r of this.rows()) {
+      if (r.dataset[KEY] == null) {
+        this.decorate(r);
+        this.data.set(r, readRow(r));
+      }
+    }
     return [...this.contents.children]
       .map((el) => (el as HTMLElement).dataset?.[KEY])
       .filter((k): k is string => !!k && (isPhase(k) || k.startsWith("r")));
   }
   private keyOf = (el: HTMLElement) => el.dataset[KEY]!;
+  /** seqNow() without removed rows. */
+  private liveSeq(): string[] {
+    const seq = this.seqNow();
+    const els = this.elByKey();
+    return seq.filter((k) => isPhase(k) || (els.has(k) && this.live(els.get(k)!)));
+  }
   private elByKey(): Map<string, HTMLElement> {
     const m = new Map<string, HTMLElement>();
     for (const el of this.contents.children) {
@@ -460,6 +479,7 @@ export class PlaylistTools {
       act("Move to bottom", ICONS.bottom, () => void this.moveTo("bottom")),
     ];
     this.toPhaseBtn = act("Move to phase", ICONS.phases, () => this.openMoveToPhase(this.toPhaseBtn));
+    this.newPhaseBtn = act("New phase", ICONS.addPhase, () => void this.newPhaseFromSelection());
     this.removeBtn = act("Remove", ICONS.trash, () => this.removeSelected());
     const selecting = h(
       "div",
@@ -476,6 +496,7 @@ export class PlaylistTools {
         { class: "y3s-sel-actions" },
         act("Play", ICONS.play, () => this.playSelected()),
         ...this.moveBtns,
+        this.newPhaseBtn,
         this.toPhaseBtn,
         this.removeBtn,
       ),
@@ -537,6 +558,13 @@ export class PlaylistTools {
     this.selectAllBtn.textContent = filtering ? `Select all ${shown.length} matching` : `Select all ${shown.length}`;
     for (const b of [...this.moveBtns, this.removeBtn]) b.hidden = this.access === "view-only";
     this.toPhaseBtn.hidden = this.phases.size === 0;
+    {
+      const live = this.liveSeq();
+      const split = n > 0 && isContiguous(live, new Set(this.orderedSelection().map(this.keyOf)));
+      this.newPhaseBtn.title = split
+        ? "Start a new phase at the first selected video (nothing moves)"
+        : "Gather the selected videos into a new phase";
+    }
     for (const b of this.moveBtns) {
       const off = this.access === "editable" && !this.manualView;
       b.setAttribute("aria-disabled", String(off));
@@ -782,21 +810,43 @@ export class PlaylistTools {
     });
   }
 
-  private playIds(rows: HTMLElement[], shuffle = false): void {
-    let ids = rows.map((r) => this.data.get(r)?.videoId).filter((v): v is string => !!v);
-    if (!ids.length) return;
-    if (shuffle) {
-      ids = [...ids];
-      for (let i = ids.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [ids[i], ids[j]] = [ids[j], ids[i]];
-      }
+  /**
+   * Play these rows inside the real playlist, staying within them (and
+   * looping if asked). The watch page takes over from here.
+   */
+  playRows(rows: HTMLElement[], name: string, opts: { loop?: boolean; shuffle?: boolean } = {}): void {
+    if (!this.playlistId) return;
+    const live = this.rows().filter(this.live);
+    const serverPos = new Map((this.server ?? []).map((s, i) => [s.playlistItemId, i + 1]));
+    const items: PlayItem[] = [];
+    const rowOf: HTMLElement[] = [];
+    for (const r of rows) {
+      const v = this.data.get(r)?.videoId;
+      if (!v || !this.live(r)) continue;
+      items.push({ videoId: v, index: serverPos.get(r.dataset[ITEM] ?? "") ?? live.indexOf(r) + 1 });
+      rowOf.push(r);
     }
-    if (ids.length > MAX_QUEUE_IDS) showSnack(`Playing the first ${MAX_QUEUE_IDS} of ${ids.length}`);
-    location.assign(`https://www.youtube.com/watch_videos?video_ids=${ids.slice(0, MAX_QUEUE_IDS).join(",")}`);
+    if (!items.length) return;
+    this.persistNow();
+    const state = startPlay({
+      playlistId: this.playlistId,
+      name,
+      items,
+      loop: !!opts.loop,
+      shuffle: !!opts.shuffle,
+    });
+    savePlay(state);
+    const first = rowOf[state.order[0]];
+    const anchor = this.data.get(first)?.anchor;
+    if (anchor) anchor.click();
+    else location.assign(watchUrl(state, items[state.order[0]]));
   }
   playSelected(): void {
-    this.playIds(this.orderedSelection());
+    const sel = this.orderedSelection();
+    this.playRows(sel, sel.length === 1 ? "this video" : `${count(sel.length, "selected video")}`);
+  }
+  playPhase(id: string, opts: { loop?: boolean; shuffle?: boolean } = {}): void {
+    this.playRows(this.rowsOfPhase(id), this.phases.get(id)?.name ?? "phase", opts);
   }
 
   // ─────────────────────────────────────────────────────────── sorting
@@ -887,8 +937,9 @@ export class PlaylistTools {
   private renderPhases(): void {
     if (!this.phases.size) return;
     const filtering = this.filtering;
+    const seq = this.seqNow();
     const els = this.elByKey();
-    for (const s of sections(this.seqNow())) {
+    for (const s of sections(seq)) {
       if (s.phase === null) continue;
       const p = this.phases.get(s.phase);
       const el = this.phaseEls.get(s.phase);
@@ -937,8 +988,9 @@ export class PlaylistTools {
   }
 
   rowsOfPhase(id: string | null): HTMLElement[] {
+    const seq = this.seqNow();
     const els = this.elByKey();
-    const s = sections(this.seqNow()).find((x) => x.phase === id);
+    const s = sections(seq).find((x) => x.phase === id);
     return (s?.rows ?? []).map((k) => els.get(k)!).filter((r) => r && this.live(r));
   }
 
@@ -952,38 +1004,70 @@ export class PlaylistTools {
     for (let n = this.phases.size + 1; ; n++) if (!used.has(`Phase ${n}`)) return `Phase ${n}`;
   }
 
-  /** "Start phase here": a divider before the focused (or first selected) video. */
+  /**
+   * "Start phase here": a divider right before `row`, splitting the phase it
+   * is in. Nothing moves. Auto-named ranges ("Videos 1–100") are renumbered.
+   */
   startPhaseHere(row = this.focusRow ?? this.orderedSelection()[0]): void {
     if (!row) {
       showSnack("Focus or select the video where the phase should start");
       return;
     }
+    const key = this.keyOf(row);
+    const from = sections(this.seqNow()).find((s) => s.rows.includes(key));
+    if (from?.phase && from.rows[0] === key) {
+      showSnack(`${this.phases.get(from.phase)?.name ?? "This phase"} already starts here`);
+      return;
+    }
     const id = this.newPhaseId();
-    const name = this.nextName();
+    const parent = from?.phase ? this.phases.get(from.phase) : undefined;
+    const ranged = !!parent && isRangeName(parent.name);
+    const name = ranged ? "" : this.nextName();
     this.commit(
-      `Started ${name}`,
+      parent ? `Split ${parent.name}` : `Started ${name}`,
       () => {
         this.addPhase(id, name, false);
-        this.applySeq(startPhaseAt(this.seqNow(), id, this.keyOf(row)));
+        this.applySeq(startPhaseAt(this.seqNow(), id, key));
+        if (ranged) this.renameRanges([from!.phase!, id]);
+        if (parent) parent.collapsed = false;
+        this.selected.clear();
       },
       false,
     );
-    this.renamePhase(id);
+    if (!ranged) this.renamePhase(id);
   }
 
-  /** Gather the selected videos into a new phase. */
+  /** Name phases "Videos a–b" after the positions they now cover. */
+  private renameRanges(ids: string[]): void {
+    const live = this.liveSeq();
+    let n = 0;
+    for (const s of sections(live)) {
+      const first = n + 1;
+      n += s.rows.length;
+      if (s.phase && ids.includes(s.phase)) {
+        const p = this.phases.get(s.phase)!;
+        p.name = s.rows.length ? `Videos ${first}–${n}` : "Empty phase";
+      }
+    }
+  }
+
+  /**
+   * New phase from the selection. One video or a run of neighbours splits the
+   * phase there (nothing moves); a scattered selection is gathered together.
+   */
   async newPhaseFromSelection(): Promise<void> {
     const sel = this.orderedSelection();
     if (!sel.length) return this.startPhaseHere();
+    const live = this.liveSeq();
+    const keys = new Set(sel.map(this.keyOf));
+    if (isContiguous(live, keys)) return this.startPhaseHere(sel[0]);
     const id = this.newPhaseId();
     const name = this.nextName();
-    const next = phaseFromRows(this.seqNow(), id, new Set(sel.map(this.keyOf)));
-    const moves = next.filter((k) => !isPhase(k)).join() !== this.seqNow().filter((k) => !isPhase(k)).join();
-    const suffix = moves ? await this.prepareReorder() : "";
+    const suffix = await this.prepareReorder();
     if (suffix === null) return;
-    this.commit(`New phase with ${count(sel.length, "video")}${suffix}`, () => {
+    this.commit(`Gathered ${count(sel.length, "video")} into ${name}${suffix}`, () => {
       this.addPhase(id, name, false);
-      this.applySeq(phaseFromRows(this.seqNow(), id, new Set(sel.map(this.keyOf))));
+      this.applySeq(phaseFromRows(this.seqNow(), id, keys));
       this.selected.clear();
     });
     this.renamePhase(id);
@@ -1116,7 +1200,15 @@ export class PlaylistTools {
     const sel = this.selected.size;
     items.push(
       sel
-        ? { label: `New phase from ${count(sel, "selected video")}`, run: () => void this.newPhaseFromSelection() }
+        ? {
+            label: isContiguous(
+              this.liveSeq(),
+              new Set(this.orderedSelection().map(this.keyOf)),
+            )
+              ? "New phase starting at the selection"
+              : `Gather ${count(sel, "selected video")} into a new phase`,
+            run: () => void this.newPhaseFromSelection(),
+          }
         : { label: "Start phase at focused video", disabled: !this.focusRow, run: () => this.startPhaseHere() },
     );
     const total = this.rows().filter(this.live).length;
@@ -1148,8 +1240,9 @@ export class PlaylistTools {
     const i = ids.indexOf(id);
     const rows = this.rowsOfPhase(id);
     toggleMenu(anchor, [
-      { label: "Play phase", disabled: !rows.length, run: () => this.playIds(rows) },
-      { label: "Shuffle play", disabled: !rows.length, run: () => this.playIds(rows, true) },
+      { label: "Play phase", disabled: !rows.length, run: () => this.playPhase(id) },
+      { label: "Loop phase", disabled: !rows.length, run: () => this.playPhase(id, { loop: true }) },
+      { label: "Shuffle phase", disabled: !rows.length, run: () => this.playPhase(id, { shuffle: true, loop: true }) },
       {
         label: "Select all in phase",
         disabled: !rows.length,
@@ -1275,10 +1368,9 @@ export class PlaylistTools {
 
   private storedPhases(): StoredPhase[] {
     const nth = this.nthMap();
+    const seq = this.liveSeq();
     const els = this.elByKey();
-    const placed = anchorsOf(
-      this.seqNow().filter((k) => isPhase(k) || this.live(els.get(k)!)),
-    ).map((a) => ({
+    const placed = anchorsOf(seq).map((a) => ({
       id: a.id,
       name: this.phases.get(a.id)?.name ?? "",
       after: a.after === null ? null : this.anchorFor(els.get(a.after)!, nth),

@@ -22,6 +22,3 @@ export const SAVE_DELAY_MS = 6000;
 
 /** Batches with more writes than this ask before saving. */
 export const CONFIRM_WRITES_OVER = 20;
-
-/** watch_videos accepts up to this many ids. */
-export const MAX_QUEUE_IDS = 50;

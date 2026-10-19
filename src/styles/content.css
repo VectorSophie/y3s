@@ -660,3 +660,68 @@ html.y3s-dragging * {
   max-height: calc(100vh - 16px);
   overflow-y: auto;
 }
+
+/* ---------- phase playback on the watch page */
+.y3s-play-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 8px 0;
+  padding: 4px 4px 4px 12px;
+  border-radius: 12px;
+  background: var(--y3s-layer);
+  font-family: "Roboto", "Arial", sans-serif;
+  color: var(--y3s-text);
+}
+.y3s-play-pill button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.y3s-play-pill .y3s-icon-btn {
+  width: 36px;
+  height: 36px;
+}
+.y3s-play-pill .y3s-icon-btn[aria-pressed="false"] {
+  color: var(--y3s-text2);
+}
+.y3s-play-pill .y3s-icon-btn[aria-pressed="true"] {
+  background: var(--y3s-layer-hover);
+}
+.y3s-play-icon {
+  display: grid;
+  place-items: center;
+  color: var(--yt-spec-brand-icon-active, #f00);
+}
+.y3s-play-icon .y3s-icon {
+  width: 20px;
+  height: 20px;
+}
+.y3s-play-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding-left: 4px;
+}
+.y3s-play-name {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.y3s-play-pos {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--y3s-text2);
+}
+ytd-playlist-panel-video-renderer.y3s-outside {
+  opacity: 0.4;
+}
+ytd-playlist-panel-video-renderer.y3s-outside:hover {
+  opacity: 0.8;
+}

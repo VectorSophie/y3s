@@ -167,3 +167,13 @@ export function placeAnchors(rows: string[], anchors: Anchor[]): { seq: string[]
   for (const r of rows) seq.push(r, ...(after.get(r) ?? []));
   return { seq, pending };
 }
+
+/** True when `rows` sit next to each other in one section (no divider between). */
+export function isContiguous(seq: string[], rows: Set<string>): boolean {
+  const idx = seq.map((k, i) => (rows.has(k) ? i : -1)).filter((i) => i >= 0);
+  if (!idx.length) return false;
+  return idx[idx.length - 1] - idx[0] === idx.length - 1;
+}
+
+const RANGE = /^Videos \d+–\d+$/;
+export const isRangeName = (name: string) => RANGE.test(name);

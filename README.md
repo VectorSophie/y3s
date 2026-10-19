@@ -27,20 +27,28 @@ your light or dark theme.
 - **Phases:** named dividers that split a long playlist into sections, so you
   can fold away the 300 videos you're not touching. Everything below a
   divider, until the next one, is in that phase.
-  - Create them from **Phases** → *Split into phases of 25/50/100*, *New phase
-    from selection* (gathers the selected videos), or *Start phase at focused
-    video* (`p`).
+  - Create them from **Phases** → *Split into phases of 25/50/100*, or with
+    **New phase** in the selection bar (`p`). Select one video (or a run of
+    neighbours) in the middle of a phase and New phase **splits** it there;
+    nothing moves, and "Videos 1–100" style names are renumbered. A scattered
+    selection is **gathered** into a new phase instead.
   - Phases open **folded**; click a header to unfold. Headers show the count
     and runtime. Filtering looks inside folded phases.
-  - Each header's ⋮ menu: Play, Shuffle play, Select all, Sort this phase,
-    Move up/down/top/bottom, Rename (or double-click the name), Remove phase
-    (keeps the videos).
+  - Each header's ⋮ menu: **Play / Loop / Shuffle phase**, Select all, Sort
+    this phase, Move up/down/top/bottom, Rename (or double-click the name),
+    Remove phase (keeps the videos).
+  - **Playing a phase** happens inside the real playlist (no 50-video limit).
+    Just before each video ends, y3s opens the next one in the phase, or the
+    first again when looping, so YouTube's autoplay never wanders out. The
+    playlist panel shows *Looping Phase 2 · 3 of 25* with loop, shuffle and
+    stop buttons, and dims videos outside the phase. Without loop it pauses
+    at the phase's last video. Picking a video outside the phase ends it.
+    **Play** in the selection bar works the same way for any selection.
   - **Move to phase** sends the selection to the end of a phase.
   - Moving videos or whole phases is a real reorder, saved to YouTube like any
     other move. The dividers themselves live only in y3s, saved per playlist
     on this computer until you choose *Clear all phases*. The main **Sort**
     sorts inside each phase.
-- **Play** a selection as a temporary queue (first 50).
 - **Load all** pulls in the rest of a long playlist so filters cover it.
 - Total runtime next to the video count.
 

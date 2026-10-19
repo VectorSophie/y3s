@@ -4,18 +4,23 @@
 // slow interval rather than assuming a fresh page load.
 
 import { PanelTools } from "./panel-tools";
+import { loadPlay, PhasePlayer, savePlay } from "./phase-player";
 import { PlaylistTools } from "./playlist-tools";
 import { findPlaylistList, findPlaylistPanel } from "./yt-dom";
 
 declare global {
   interface Window {
-    __y3s?: { playlist: PlaylistTools | null; panel: PanelTools | null };
+    __y3s?: { playlist: PlaylistTools | null; panel: PanelTools | null; player: PhasePlayer | null };
   }
 }
 
 function main(): void {
   if (window.__y3s) return;
-  const state: { playlist: PlaylistTools | null; panel: PanelTools | null } = { playlist: null, panel: null };
+  const state: { playlist: PlaylistTools | null; panel: PanelTools | null; player: PhasePlayer | null } = {
+    playlist: null,
+    panel: null,
+    player: null,
+  };
   window.__y3s = state;
 
   const tick = () => {
@@ -34,6 +39,21 @@ function main(): void {
         state.panel = null;
       }
       if (!state.panel && panel) state.panel = new PanelTools(panel);
+
+      // Phase playback follows the tab while it stays on that playlist.
+      const play = loadPlay();
+      const listId = new URLSearchParams(location.search).get("list");
+      const onIt = !!play && location.pathname === "/watch" && listId === play.playlistId;
+      if (state.player && (!onIt || state.player.playlistId !== play?.playlistId)) {
+        state.player.destroy();
+        state.player = null;
+      }
+      if (onIt) {
+        state.player ??= new PhasePlayer(play!);
+        state.player.tick();
+      } else if (play && Date.now() - play.startedAt > 15000) {
+        savePlay(null); // left the playlist: playback is over
+      }
     } catch (err) {
       console.warn("[y3s]", err);
     }
@@ -48,6 +68,7 @@ function main(): void {
   );
   window.addEventListener("yt-navigate-start", () => state.playlist?.flushOnLeave());
   window.addEventListener("yt-navigate-finish", () => setTimeout(tick, 50));
+  window.addEventListener("popstate", () => setTimeout(tick, 50));
   window.addEventListener("pagehide", () => {
     state.playlist?.flushOnLeave();
     state.playlist?.persistNow();

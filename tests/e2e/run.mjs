@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { playlistPage, startApi, watchPage } from "./fake-youtube.mjs";
+import { playlistPage, silentWav, startApi, watchPage } from "./fake-youtube.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
@@ -60,15 +60,24 @@ const ctx = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), "y
   executablePath: chromePath(),
   headless: true,
   viewport: { width: 1440, height: 900 },
-  args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`, "--no-sandbox"],
+  args: [
+    `--disable-extensions-except=${ext}`,
+    `--load-extension=${ext}`,
+    "--no-sandbox",
+    "--autoplay-policy=no-user-gesture-required",
+  ],
 });
 
 let dark = true;
+const clip = silentWav(2);
+const visits = [];
 await ctx.route("https://www.youtube.com/**", (route) => {
   const u = new URL(route.request().url());
+  if (u.pathname === "/media/clip.wav") return route.fulfill({ contentType: "audio/wav", body: clip });
   const list = u.searchParams.get("list");
   if (u.pathname === "/playlist") return route.fulfill({ contentType: "text/html", body: playlistPage(state.items, list, { dark }) });
   if (u.pathname === "/watch") {
+    visits.push(u.searchParams.get("v"));
     const vis = state.items.filter((i) => !i.hidden);
     const cur = Math.max(0, vis.findIndex((i) => i.videoId === u.searchParams.get("v")));
     return route.fulfill({ contentType: "text/html", body: watchPage(state.items, list, cur) });
@@ -79,7 +88,7 @@ await ctx.route("https://www.youtube.com/**", (route) => {
 
 const page = ctx.pages()[0] ?? (await ctx.newPage());
 const errors = [];
-page.on("pageerror", (e) => errors.push(String(e)));
+page.on("pageerror", (e) => errors.push(String(e.stack || e).split("\n").slice(0, 3).join(" | ")));
 page.on("console", (m) => {
   if (m.type() === "error" || /\[y3s\]/.test(m.text())) errors.push(`console ${m.type()}: ${m.text()}`);
 });
@@ -307,19 +316,86 @@ try {
   check(JSON.stringify(await layout()) === JSON.stringify(layoutBefore), "phases come back after a reload in the same places");
   check((await page.$$(".y3s-phase.y3s-folded")).length === 4, "and start folded");
 
-  // play a phase
+  // play a phase: opens the first video inside the real playlist
   const firstPhaseIds = rowsOfLayout((await layout()).slice(0, (await layout()).indexOf("[Videos 1–25]")));
   await page.locator(".y3s-phase").nth(0).locator('[aria-label="Phase actions"]').click();
   await page.click('.y3s-menu-item >> text="Play phase"');
-  await page.waitForURL(/watch_videos/);
-  check(new URL(page.url()).searchParams.get("video_ids") === firstPhaseIds.join(","), "Play phase queues exactly that phase's videos");
+  await page.waitForURL(new RegExp(`/watch\\?v=${firstPhaseIds[0]}&list=${PL}`));
+  check(true, "Play phase opens the phase's first video in the playlist");
+  await page.waitForSelector(".y3s-play-pill");
+  check(/Playing Videos 76–95/.test(await page.textContent(".y3s-play-pill")), "watch page shows the phase being played");
+  await page.click('[aria-label="Stop phase playback"]');
+  check(!(await page.$(".y3s-play-pill")), "stop ends phase playback");
   await page.goBack();
   await page.waitForSelector(".y3s-bar");
+  await waitFor(async () => (await page.$$(".y3s-phase")).length === 4);
 
   // clear them
   await page.click(".y3s-chip >> text=/^Phases/");
   await page.click('.y3s-menu-item >> text="Clear all phases"');
   check((await page.$$(".y3s-phase")).length === 0, "Clear all phases removes them");
+
+  // ── split a phase at one video, then loop the middle phase
+  await page.reload();
+  await page.waitForSelector(".y3s-bar");
+  await page.click(".y3s-link >> text=Load all");
+  await waitFor(async () => (await pageIds()).length === state.items.length, 30000);
+  await page.click(".y3s-chip >> text=/^Phases/");
+  await page.click('.y3s-menu-item >> text="Split into phases of 50"');
+  await waitFor(async () => (await page.$$(".y3s-phase")).length === 2);
+  await sleep(300);
+  await page.locator(".y3s-phase").nth(1).locator(".y3s-phase-toggle").click();
+  await waitFor(async () => (await page.$$("ytd-playlist-video-renderer:not(.y3s-collapsed)")).length === 45, 5000);
+  const ids0 = await pageIds();
+  await checkbox(53).click();
+  await page.click('.y3s-sel-actions >> text="New phase"');
+  lay = await layout();
+  check(
+    JSON.stringify(lay.filter((x) => x.startsWith("["))) === JSON.stringify(["[Videos 1–50]", "[Videos 51–53]", "[Videos 54–95]"]),
+    "selecting one video and pressing New phase splits the phase there, renaming the ranges",
+    JSON.stringify(lay.filter((x) => x.startsWith("["))),
+  );
+  check(JSON.stringify(rowsOfLayout(lay)) === JSON.stringify(ids0), "splitting moves nothing");
+  const loopIds = ids0.slice(50, 53);
+  const after = ids0[53];
+  await shot("14-split");
+
+  visits.length = 0;
+  await page.locator(".y3s-phase").nth(1).locator('[aria-label="Phase actions"]').click();
+  await page.click('.y3s-menu-item >> text="Loop phase"');
+  await page.waitForSelector(".y3s-play-pill");
+  check(!!(await waitFor(async () => visits.length >= 5, 40000, 200)), "looping played 5 videos", JSON.stringify(visits));
+  check(
+    JSON.stringify(visits.slice(0, 5)) === JSON.stringify([...loopIds, ...loopIds.slice(0, 2)]),
+    "loop goes 51 → 52 → 53 → back to 51, never on to video 54",
+    JSON.stringify(visits.slice(0, 5)),
+  );
+  check(!visits.includes(after), "YouTube's autoplay never escaped the phase");
+  const pill = await page.textContent(".y3s-play-pill");
+  check(/Looping Videos 51–53/.test(pill) && / of 3/.test(pill), "watch page shows the loop", pill);
+  const outside = await page.$$eval("ytd-playlist-panel-video-renderer.y3s-outside", (e) => e.length);
+  check(outside === state.items.length - 3, "videos outside the phase are dimmed in the panel", String(outside));
+  await shot("15-loop-pill");
+
+  // turn loop off: playback stops at the phase's last video
+  await page.click('[aria-label="Loop phase"]');
+  const count0 = visits.length;
+  check(!!(await waitFor(async () => /Finished/.test(await page.textContent(".y3s-play-pill")), 20000)), "without loop, playback stops at the end of the phase");
+  check(visits.at(-1) === loopIds[2] && visits.length - count0 <= 3, "last video played is the phase's last", JSON.stringify(visits.slice(count0)));
+  check(await page.$eval("video", (v) => v.paused), "the player is paused at the end");
+  await sleep(3000);
+  check(visits.at(-1) === loopIds[2], "and stays there");
+
+  // picking a video outside the phase ends phase playback
+  await page.locator(`ytd-playlist-panel-video-renderer a[href*="v=${ids0[10]}"]`).click();
+  await page.waitForURL(new RegExp(`v=${ids0[10]}`));
+  await waitFor(async () => !(await page.$(".y3s-play-pill")), 5000);
+  check(!(await page.$(".y3s-play-pill")), "choosing a video outside the phase stops phase playback");
+  await page.goto(`https://www.youtube.com/playlist?list=${PL}`);
+  await page.waitForSelector(".y3s-bar");
+  await waitFor(async () => (await page.$$(".y3s-phase")).length === 3);
+  await page.click(".y3s-chip >> text=/^Phases/");
+  await page.click('.y3s-menu-item >> text="Clear all phases"');
 
   // ── light theme look
   dark = false;
@@ -342,7 +418,7 @@ try {
   check(!!(await waitFor(async () => /View only/.test(await page.textContent(".y3s-stats")))), "someone else's playlist is view only");
   await checkbox(0).click();
   const actions = await page.$$eval(".y3s-sel-actions .y3s-btn", (bs) => bs.filter((b) => !b.hidden).map((b) => b.textContent));
-  check(JSON.stringify(actions) === JSON.stringify(["Play"]), "only Play is offered", JSON.stringify(actions));
+  check(JSON.stringify(actions) === JSON.stringify(["Play", "New phase"]), "only Play and New phase are offered", JSON.stringify(actions));
 
   // ── watch page panel
   await page.goto(`https://www.youtube.com/watch?v=${serverIds()[10]}&list=${PL}`);
