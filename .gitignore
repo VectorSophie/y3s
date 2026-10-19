@@ -11,3 +11,5 @@ manifest.local.json
 # Extension signing private key — pins the ID; never commit. (The public half
 # lives in manifest.json "key", which is safe to commit.)
 key.pem
+dist-e2e
+tests/e2e/out/

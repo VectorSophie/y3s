@@ -1,7 +1,7 @@
 {
   "name": "y3s",
-  "version": "0.1.0",
-  "description": "y3s (YouTube is Somehow Still Shit) — a Spotify-like playlist workstation injected into regular YouTube playlist pages.",
+  "version": "0.4.0",
+  "description": "y3s (YouTube is Somehow Still Shit) \u2014 a Spotify-like playlist workstation injected into regular YouTube playlist pages.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,9 @@
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:e2e": "node scripts/build.mjs --e2e=http://127.0.0.1:8765",
+    "test:e2e": "npm run build:e2e && node tests/e2e/run.mjs"
   },
   "keywords": [
     "chrome-extension",
@@ -22,6 +24,7 @@
     "@types/chrome": "^0.0.270",
     "esbuild": "^0.24.0",
     "jsdom": "^25.0.1",
+    "playwright-core": "^1.56.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.9"
   }

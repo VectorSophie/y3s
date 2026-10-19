@@ -1,143 +1,79 @@
-# y3s — Architecture
+# y3s — Architecture (v0.4)
 
-y3s is a Manifest V3 Chrome extension that injects a Spotify-like playlist
-workstation into regular YouTube playlist pages. It is **not** a popup app and
-it does **not** target music.youtube.com.
-
-## Text architecture diagram
+y3s adds tools to YouTube's own playlist page and watch-page playlist panel.
+It doesn't replace YouTube's list: it decorates the rows YouTube renders and
+inserts a filter bar above them, styled with YouTube's theme variables.
 
 ```
-                         ┌─────────────────────────────────────────────┐
-                         │              YouTube page (SPA)              │
-                         │  youtube.com/playlist?list=…  (in-place)     │
-                         │                                              │
-                         │   ┌──────────────────────────────────────┐  │
- page-detect.ts ───▶ mount-point  (#y3s-root in playlist column, ShadowDOM)
- youtube-scrape ──▶│   │  ┌────────────────────────────────┐  │  │
-   (DOM read)            │   │  │ Panel (in playlist column)     │  │  │
-                         │   │  │  header · search · chips       │  │  │
-                         │   │  │  toolbar · track list · phases │  │  │
-                         │   │  │  toast   (native list hidden)  │  │  │
-                         │   │  └────────────────────────────────┘  │  │
-                         │   └──────────────────────────────────────┘  │
-                         └───────────────────────┬──────────────────────┘
-                                                 │ typed messages
-                                                 │ (chrome.runtime)
-                                                 ▼
-                         ┌─────────────────────────────────────────────┐
-                         │        Service worker (background)          │
-                         │                                              │
-                         │  auth.ts        → chrome.identity tokens     │
-                         │  youtube-api.ts → fetch googleapis (CORS-OK) │
-                         │  service-worker → message router             │
-                         └───────────────────────┬──────────────────────┘
-                                                 │ HTTPS + Bearer token
-                                                 ▼
-                         ┌─────────────────────────────────────────────┐
-                         │           YouTube Data API v3                │
-                         │  playlistItems.list / .update / .delete /    │
-                         │  .insert  ·  playlists.list (metadata)       │
-                         └─────────────────────────────────────────────┘
-
-   chrome.storage.local  ◀── phases (per playlistId), UI prefs (later)
-   runtime memory only   ◀── selection state
+ YouTube page (SPA)                          Service worker
+ ┌─────────────────────────────────┐        ┌──────────────────────────────┐
+ │ content-script.ts  (mount loop) │        │ auth.ts   chrome.identity    │
+ │  ├─ playlist-tools.ts           │ typed  │ youtube-api.ts  Data API v3  │
+ │  │   filter bar, chips, sort,   │ msgs   │ service-worker.ts            │
+ │  │   checkboxes, selection bar, │◀──────▶│   APPLY_CHANGES runs writes  │
+ │  │   keyboard, save queue       │        │   in order, reports progress │
+ │  ├─ panel-tools.ts (watch page) │        └──────────────┬───────────────┘
+ │  └─ yt-dom.ts  (all selectors)  │                       │ HTTPS + token
+ │ core/  filter · match · plan    │                       ▼
+ └─────────────────────────────────┘             YouTube Data API v3
 ```
 
-## Content script vs background responsibilities
+## The edit → save path
 
-**Content script (`/src/content`, `/src/ui`, `/src/state`)**
+1. An edit (move, remove, sort) changes the page at once and pushes an undo
+   snapshot. The snackbar shows **Undo**.
+2. After `SAVE_DELAY_MS` (6 s) without undo, `pendingChanges()` compares the
+   page with the last known server list:
+   - `core/match.ts` links each row to its playlistItem (repeated videos are
+     paired in order of appearance).
+   - `core/plan.ts` builds deletes, then the fewest moves (everything off the
+     longest increasing run moves; positions are replayed so each
+     `playlistItems.update` lands exactly). Videos YouTube hides keep their
+     place next to the row they followed.
+3. More than `CONFIRM_WRITES_OVER` writes → confirm dialog with quota cost.
+4. The service worker applies the changes in order and stops at the first
+   error, reporting how many succeeded. The page updates its server list from
+   what actually applied.
 
-- Detect the playlistId from the URL (`/playlist` page; watch pages out of scope).
-- Mount a single Shadow-DOM panel **inside the playlist column** (`mount-point.ts`),
-  hiding the native list; respond to SPA navigation.
-- Render the entire panel UI and own all interaction (search, selection,
-  drag-select, phases, shortcuts).
-- **Hybrid load:** paint instantly from scraped page DOM (`youtube-scrape.ts`,
-  `source:"dom"`), then upgrade to the full API snapshot (`source:"api"`) when a
-  silent token exists; reconcile by `videoId` so selection + phases survive.
-- Hold the in-memory playlist snapshot + selection.
-- Read/write phase metadata in `chrome.storage.local`.
-- **Never** touch OAuth tokens or call googleapis directly. Writes require an
-  API snapshot first, so DOM-only sessions prompt sign-in on the first edit.
+## Phases
 
-**Background / service worker (`/src/background`)**
+Dividers are real elements placed among YouTube's rows. All phase operations
+(`core/phases.ts`) work on the sequence of row keys and divider markers and
+the page re-applies the result, so membership is purely positional and the
+save path above sees only the row order. Each divider is stored per playlist
+in `chrome.storage.local` as "after this row" (playlistItemId, or video id +
+which copy), restored folded on load, re-placed as lazy-loaded rows arrive,
+and put back if YouTube re-renders the list.
 
-- Own `chrome.identity` and all OAuth tokens.
-- Be the single place that talks to the YouTube Data API (keeps tokens out of
-  the page and sidesteps content-script CORS limits).
-- Route typed messages (`/src/shared/messages.ts`) and return a uniform
-  `{ ok, data } | { ok, error }` envelope.
+## Phase playback
 
-Why the split: tokens never enter the page, API host permissions live in one
-place, and the content script stays focused on UI/state.
+`core/phase-play.ts` holds a per-tab session (sessionStorage): the phase's
+videos, play order, loop/shuffle. `content/phase-player.ts` drives it on the
+watch page and in the miniplayer: it finishes each phase video a moment
+before the end and opens the next one (or lets YouTube's autoplay do it when
+that's the same video), sends the player back if autoplay lands outside the
+phase, takes over the player's ⏮ ⏭ and Shift+P/N (YouTube Music: j/k), and
+puts its controls into the player bar.
 
-## API write flow (example: delete selected)
+## Sites
 
-```
-User selects rows ─▶ clicks Delete
-     │
-     ▼
-operation-planner.buildDeletePlan(selectedTracks)
-     │  → { type:"delete", estimatedApiCalls, estimatedQuotaCost, operations[] }
-     ▼
-Confirmation modal shows count + quota cost + summary
-     │  user confirms
-     ▼
-For each op: content → DELETE_PLAYLIST_ITEM(playlistItemId) → background
-     │                                   │
-     │                                   ▼  auth.getAuthToken(false→true on 401)
-     │                                   ▼  youtube-api.deletePlaylistItem()
-     │  ◀── per-item { ok } / { error }
-     ▼
-Collect results → update snapshot → toast summary
-     │  on partial failure: list which items failed and why (no silent mutate)
-```
+`content/yt-dom.ts` has one selector set per site (YouTube, YouTube Music);
+everything else goes through it. The toolbar icon opens a page check that
+counts what each selector finds, without page content, for quick fixes when
+YouTube changes its markup.
 
-Position/sort writes follow the same plan→confirm→apply path but are gated
-behind a stronger warning (quota + "playlist must be manually sortable").
+## Guards
 
-## Local phase metadata flow
+- Ownership: `playlists.list` channel vs `channels.list?mine=true`. Not yours
+  → view only (sorting is page-only, no Move/Remove).
+- Order: if the rows YouTube shows aren't in playlist order (its Sort is not
+  *Manual*), reorders are refused; deletes still save.
+- Reorders load the whole playlist first.
 
-- Phases are **extension-only** metadata. YouTube playlists are flat; we never
-  try to create real headers on YouTube.
-- Stored in `chrome.storage.local` under key `y3s:phases:<playlistId>` as an
-  array of `Phase` records.
-- A phase references tracks by `videoId` (`trackVideoIds`) and optionally
-  anchors before a video (`beforeVideoId`) so it can survive reorders.
-- `phase-store.ts` loads on drawer open, mutates in memory, and persists on
-  change. Selection is **not** persisted (runtime only).
-- Export/import to JSON is a documented TODO that serializes the same array.
+## Testing
 
-## OAuth scope (chosen)
-
-**`https://www.googleapis.com/auth/youtube`**
-
-This is the minimum scope that grants read + write to the authenticated user's
-own playlists, which is what `playlistItems.insert/update/delete` require.
-We deliberately avoid broader scopes (`youtubepartner`, full account
-management beyond YouTube). Read-only scopes are insufficient because the MVP
-performs real deletes.
-
-Configured in `manifest.json` under the `oauth2` key alongside the OAuth client
-ID. See `README.md` for Google Cloud setup.
-
-## Known risks
-
-- **Quota:** writes cost 50 units each; a full re-sort can consume the entire
-  10k/day quota. Mitigated by the operation planner + mandatory confirmation.
-- **Manual-sort constraint:** position edits fail unless the playlist is set to
-  manual ordering. Surfaced as a specific error.
-- **SPA fragility:** YouTube re-renders without reloads; navigation hooks keep
-  the root in sync and avoid duplicate injection.
-- **Ownership:** only the owner can edit; 403s are surfaced plainly.
-- **No DOM-write fallback:** if an API write fails, we show an error. We never
-  fall back to clicking YouTube's UI.
-
-## Build
-
-- TypeScript bundled with **esbuild** (`scripts/build.mjs`).
-  - `content-script.ts` → `dist/content.js` (IIFE, CSS imported as text and
-    injected into the shadow root).
-  - `service-worker.ts` → `dist/service-worker.js` (ESM module worker).
-  - `manifest.json` + icons copied to `dist/`.
-- No framework. Plain TypeScript modules + plain CSS with design tokens.
+- `tests/*.test.ts` — vitest + jsdom: planner (randomized), matching,
+  filters, the page tools against a fake backend, the service worker's
+  write loop against mocked fetch.
+- `tests/e2e/` — the built extension in headless Chromium, stand-in YouTube
+  pages, and a stateful fake Data API; asserts on the saved playlist.

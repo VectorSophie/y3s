@@ -14,26 +14,21 @@ export function apiError(
 /** Friendly default messages keyed by error code. */
 export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   AUTH_NOT_CONFIGURED:
-    "Google OAuth isn't configured yet. Showing mock data. See the README to set up a client ID.",
-  NOT_SIGNED_IN: "You're not signed in. Connect your Google account to load this playlist.",
+    "Google sign-in isn't set up for this build. See the README to add an OAuth client ID.",
+  NOT_SIGNED_IN: "Sign in to save changes to your playlists.",
   AUTH_DENIED: "Sign-in was cancelled or denied.",
   QUOTA_EXCEEDED: "YouTube API daily quota exceeded. Try again tomorrow.",
   NOT_OWNER: "You don't own this playlist, so it can't be edited.",
   NOT_SORTABLE:
-    "This playlist isn't set to manual ordering, so positions can't be changed.",
+    "This playlist isn't sorted manually on YouTube, so its order can't be changed.",
   NOT_FOUND: "That playlist couldn't be found.",
   NETWORK: "Network error talking to YouTube. Check your connection.",
-  UPDATE_FAILED: "The edit failed. No changes were applied.",
+  UPDATE_FAILED: "YouTube rejected the change.",
   UNKNOWN: "Something went wrong.",
 };
 
 export function messageForError(error: ApiError): string {
   return error.message || ERROR_MESSAGES[error.code] || ERROR_MESSAGES.UNKNOWN;
-}
-
-/** Lightweight unique id (good enough for client-side phase ids). */
-export function uid(prefix = "id"): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /** Case/diacritic-insensitive substring match for client-side search. */
@@ -42,7 +37,7 @@ export function fuzzyIncludes(haystack: string, needle: string): boolean {
   return normalize(haystack).includes(normalize(needle));
 }
 
-function normalize(s: string): string {
+export function normalize(s: string): string {
   return s
     .toLowerCase()
     .normalize("NFKD")

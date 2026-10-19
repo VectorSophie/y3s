@@ -1,81 +1,133 @@
 # y3s — *YouTube is Somehow Still Shit*
 
-A Manifest V3 Chrome extension that turns a regular YouTube playlist page into a
-clean, Spotify-like **playlist workstation** — **in place**. Open a playlist and
-the searchable, selectable, sectioned editor renders right in the page, no
-clicks to open. It works instantly with no sign-in (reading the page) and
-upgrades to full, editable data when you connect your Google account.
+A Manifest V3 Chrome extension that adds power tools to YouTube's own playlist
+pages: filter, sort, multi-select, phases, keyboard navigation and bulk edits.
+Nothing is replaced; the tools sit in YouTube's page and use YouTube's own look
+(chips, menus, checkboxes, the bottom-left message with **Undo**), following
+your light or dark theme.
 
-> Works on **regular YouTube** (`youtube.com`). It does **not** target
-> `music.youtube.com`.
+> Works on **YouTube** (`www.youtube.com`) and, as a first pass, on
+> **YouTube Music** (`music.youtube.com`) playlists.
 
-> **Two modes / branches.** `main` ships the **in-place panel** (v0.2) that
-> replaces the native list with the full editor. The branch
-> **`feat/v0.3-qol-layer`** is an alternate, *non-invasive* take: YouTube's
-> list stays exactly as is, and a slim toolbar + subtle row markers add the
-> quality-of-life wins — instant filter, duplicate highlighting, total runtime,
-> vim-style keyboard nav (`j/k`, `/`, `Enter`, `x`, `y`, `g/G`), copy/export
-> (JSON·CSV·Markdown), and bulk select → delete-via-API / open-in-tabs. No
-> sign-in needed until you delete. (Drag features are a planned later phase.)
+## What you get
 
----
+**On a playlist page**
 
-## What it is
+- **Filter** the playlist as you type (title, channel or video id). Press `/`.
+- **Chips:** *Duplicates* (with **Remove extra copies**), *Unavailable*
+  (including the ones YouTube hides, with **Remove N unavailable**), and
+  **Sort**: title, channel, shortest, longest, reverse, shuffle, or back to
+  playlist order.
+- **Drag-select:** press the left mouse button on any row and drag across
+  videos; the page scrolls when you reach the top or bottom edge. Hold
+  Ctrl/Shift to add to the selection. A click without dragging still opens
+  the video, and YouTube's own reorder handle works as before.
+- **Select** with the checkbox that appears on hover, shift-click for a range,
+  or the keyboard. The bar becomes **N selected · Play · Move to top ·
+  Move to bottom · Move to phase · Remove**.
+- **Phases:** named dividers that split a long playlist into sections, so you
+  can fold away the 300 videos you're not touching. Everything below a
+  divider, until the next one, is in that phase.
+  - Create them from **Phases** → *Split into phases of 25/50/100*, or with
+    **New phase** in the selection bar (`p`). Select one video (or a run of
+    neighbours) in the middle of a phase and New phase **splits** it there;
+    nothing moves, and "Videos 1–100" style names are renumbered. A scattered
+    selection is **gathered** into a new phase instead.
+  - Phases open **folded**; click a header to unfold. Headers show the count
+    and runtime. Filtering looks inside folded phases.
+  - Each header's ⋮ menu: **Play / Loop / Shuffle phase**, Select all, Sort
+    this phase, Move up/down/top/bottom, Rename (or double-click the name),
+    Remove phase (keeps the videos).
+  - **Playing a phase** happens inside the real playlist (no 50-video limit).
+    Just before each video ends, y3s opens the next one in the phase, or the
+    first again when looping, so YouTube's autoplay never wanders out. The
+    playlist panel shows *Looping Phase 2 · 3 of 25* with loop, shuffle and
+    stop buttons, and dims videos outside the phase. Without loop it pauses
+    at the phase's last video. Picking a video outside the phase ends it.
+    **Play** in the selection bar works the same way for any selection.
+  - **Move to phase** sends the selection to the end of a phase.
+  - Moving videos or whole phases is a real reorder, saved to YouTube like any
+    other move. The dividers themselves live only in y3s, saved per playlist
+    on this computer until you choose *Clear all phases*. The main **Sort**
+    sorts inside each phase.
+- **Save to…** copies the selected videos to the end of one of your
+  playlists (searchable list). Works on any playlist, including someone
+  else's.
+- **Load all** pulls in the rest of a long playlist so filters cover it.
+- Total runtime next to the video count.
 
-y3s renders its panel inside the YouTube `/playlist` page (the native list is
-hidden while it's shown, with a **"Show original"** toggle to flip back). From
-there you can:
+**On a watch page** with a playlist: a filter field in the playlist panel
+(Enter plays the first match) and **Jump to now playing**. While a phase
+plays:
 
-- **Search** inside the playlist (title / channel / video id), instantly.
-- **Multi-select** tracks: click, shift-click ranges, Ctrl/Cmd-click toggles,
-  and **Alt-drag** a selection rectangle over rows.
-- Organise tracks into **Phases** — local-only subsections (think Spotify
-  sections), stored per playlist. YouTube playlists are flat; phases are
-  extension metadata, never written to YouTube.
-- **Sort** (title, channel, current, reverse) as a local preview.
-- Perform **real edits through the official YouTube Data API** — delete selected
-  tracks, or move a selection to the top/bottom — always behind a confirmation
-  that shows the API-call count and quota cost.
+- The **player bar** shows the phase and position (*Looping Phase 2 · 3/25*)
+  with previous/next-in-phase, loop and shuffle, so it's there in theater and
+  fullscreen too.
+- YouTube's own ⏮ ⏭ buttons and **Shift+P / Shift+N** step through the phase
+  instead of the whole playlist (wrapping when looping).
+- When the next video of the phase is also the playlist's next, YouTube's own
+  autoplay does the hand-off; y3s only steps in at phase edges or when
+  shuffling.
+- It keeps going in the **miniplayer** while you browse other pages.
 
-It's built as a **power-user tool**: dark YouTube base, subtle red accent,
-keyboard-driven, and honest about what costs quota.
+**Elsewhere on YouTube**
 
-## Features
+- **Watch Later** and **Liked videos** get the filter, sort, phases, play and
+  Save to…; they're view only, because YouTube doesn't let apps edit them.
+- YouTube's own **Save to playlist** sheet gets a search field once you have
+  more than a handful of playlists.
+- **Your playlists page** (`/feed/playlists`) gets a filter.
 
-| Area        | What you get                                                            |
-| ----------- | ----------------------------------------------------------------------- |
-| Injection   | In-place Shadow-DOM panel rendered inside the `/playlist` page column.   |
-| Data        | Works instantly with no sign-in (reads the page); upgrades to full API data when signed in. |
-| Search      | Fast client-side filtering.                                             |
-| Selection   | Click, shift-range, Ctrl/Cmd-toggle, Alt-drag marquee, select-all.      |
-| Phases      | Create / rename / delete / collapse, assign selection, "Unphased" group.|
-| Sorting     | Title A–Z, channel A–Z, current, reverse (local preview).               |
-| Editing     | Delete selected · move selection to top/bottom (real API writes).       |
-| Planning    | Every write shows projected API calls + quota + risk before applying.   |
-| Shortcuts   | `Esc`, `Ctrl/Cmd+A`, `/`, `Delete`, `P`, `S`.                           |
-| Mock mode   | Works with sample data even before OAuth is configured.                 |
+**On YouTube Music** (first pass): playlist pages get the same filter, chips,
+sort, drag-select, phases, edits and Save to…, styled for Music's dark look.
+Phase playback works on the player page, with controls in Music's player bar
+and `j` / `k` stepping within the phase. Known gaps: no panel filter in the
+queue yet, and moving between phase videos reloads the player page.
 
-### Keyboard shortcuts (panel focused)
+**Page check:** click the y3s toolbar icon on any YouTube page to see what y3s
+finds there (counts only, no titles), with a Copy button. Useful when YouTube
+changes its page and something stops showing up.
 
-- `Esc` — clear selection
-- `Ctrl/Cmd + A` — select all visible tracks
-- `/` — focus search
-- `Delete` / `Backspace` — delete selected (with confirmation)
-- `P` — create a phase from the current selection
-- `S` — sort hint
+### How edits are saved
 
-## Current limitations
+Edits show on the page immediately, with **Undo** in the bottom-left message.
+About 6 seconds later they're saved to YouTube through the official YouTube
+Data API. Undo inside that window and nothing is sent.
 
-- **Apply sort to YouTube** is not wired yet — sorting is a local preview. (The
-  operation planner already computes the cost; see TODOs.)
-- **Duplicate removal**, **export/import phases**, and **move-block** polish are
-  partially stubbed (duplicates *filter* works; one-click removal is a TODO).
-- Optimised for **small-to-medium playlists** (~100–500 items).
-- **Playlist pages only.** The in-place panel targets `youtube.com/playlist?list=…`.
-  Watch pages (`/watch?…&list=`) are not enhanced yet.
-- **No DOM-write fallback.** If an API edit fails, y3s shows a clear error — it
-  will never click YouTube's own controls to fake an edit.
-- **YouTube Music is not supported.**
+- y3s works out the fewest writes needed: moving 3 videos costs 3 writes,
+  whatever the playlist size.
+- Batches over 20 writes ask first and show the quota cost.
+- Reordering loads the whole playlist first, so positions are exact.
+- On playlists you don't own, sorting only changes what you see; Move and
+  Remove are hidden.
+- If YouTube shows the playlist in a non-manual order (e.g. *Date added*),
+  reordering is turned off until you set YouTube's Sort to *Manual*. Removing
+  still works.
+- If a save fails (quota, network), y3s says how far it got and asks you to
+  reload; it never clicks YouTube's own buttons to fake an edit.
+
+### Keyboard (playlist page)
+
+| Key | Action | Key | Action |
+| --- | --- | --- | --- |
+| `j` / `k` | Next / previous video | `t` / `b` | Move selection to top / bottom |
+| `Shift`+`j`/`k` | Extend selection | `Delete` | Remove selection |
+| `x` | Select / deselect | `z` | Undo |
+| `Enter` | Play | `Esc` | Clear filter or selection |
+| `/` | Filter | `g` / `Shift`+`g` | First / last video |
+| `p` | New phase (selection / here) | `c` / `Shift`+`c` | Fold this phase / all phases |
+| `?` | All shortcuts | | |
+
+On the watch page y3s only changes **Shift+N / Shift+P** (YouTube) or
+**j / k** (YouTube Music) while a phase is playing, so they stay in the phase.
+
+## Limitations
+
+- Saving needs the Google Cloud setup below (one-time, ~10 minutes).
+- Each write costs 50 of the default 10,000 daily API units, so about 200
+  writes a day. A full re-sort of a big playlist can use most of that.
+- y3s reads YouTube's page markup. When YouTube changes it, the fix goes in
+  `src/content/yt-dom.ts`.
 
 ---
 
@@ -84,11 +136,10 @@ keyboard-driven, and honest about what costs quota.
 You need a Google Cloud project with an OAuth client so the extension can call
 the YouTube Data API on your behalf. This takes ~10 minutes the first time.
 
-> Don't want to deal with Google Cloud yet? **Skip it.** Load the extension
-> anyway and the drawer opens in **mock mode** with sample data so you can try
-> the UI. Real editing just needs the steps below.
+> Without this you can still filter, sort and select; saving edits needs it.
 
 ### 1. Build the extension
+
 
 ```bash
 npm install
@@ -152,7 +203,8 @@ client ID (steps 4–6 below).
 
 ### 6. Put the client ID in the manifest
 
-Open **`manifest.json`** and replace the placeholder:
+If you're using your own Google Cloud project, open **`manifest.json`** and
+replace the `client_id` with yours:
 
 ```json
 "oauth2": {
@@ -189,12 +241,9 @@ the key, delete `key.pem` and run `node scripts/gen-key.mjs --write`.
 
 ### 7. Use it
 
-Open any playlist you own, e.g.
-`https://www.youtube.com/playlist?list=…`, click the **y3s** rail on the right
-(or the toolbar icon), and the drawer slides in. The first real edit triggers
-the Google sign-in consent flow.
-
----
+Open any playlist you own (`https://www.youtube.com/playlist?list=…`). The
+filter bar appears above the list. The first time you edit, click
+**Sign in to edit** and approve the Google consent screen.
 
 ## OAuth scope
 
@@ -204,41 +253,46 @@ y3s requests the minimum scope that allows editing your own playlists:
 https://www.googleapis.com/auth/youtube
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for why, and the
-content-script ↔ background split that keeps tokens out of the page.
+Tokens stay in the extension's background service worker and never reach the
+page.
 
-## Quota, briefly
+## Development
 
-Reads are cheap (1 unit/page). **Writes cost 50 units each**, against a default
-**10,000 units/day**. A full re-sort of a few hundred items can consume the
-whole daily quota — which is exactly why every write shows its projected cost
-and asks for confirmation. Details in
-[`docs/research-notes.md`](docs/research-notes.md).
+```bash
+npm run build       # → dist/
+npm test            # unit tests (vitest)
+npm run typecheck
+npm run test:e2e    # builds dist-e2e/ and drives it in headless Chromium
+```
 
-## Architecture
+The end-to-end test loads the real extension against stand-in YouTube pages
+and a fake YouTube Data API that keeps state, then checks what was actually
+saved. It needs Chromium (Google Chrome won't load extensions from the
+command line): run `npx playwright-core install chromium` once, or set
+`CHROME_PATH` to a Chromium binary. `dist-e2e/`
+skips Google sign-in; never load it in your own browser.
 
-- `src/content` — page detection, SPA-navigation handling, the injected root.
-- `src/ui` — drawer, track list, toolbar, phases, drag-select, shortcuts, toast.
-- `src/state` — playlist / selection / phase stores + operation planner.
-- `src/background` — `chrome.identity` auth and the YouTube Data API client.
-- `src/shared` — types, constants, typed messages, utilities.
+### Layout
 
-Full diagram in [`docs/architecture.md`](docs/architecture.md).
+- `src/core` — pure logic: filtering and sorting, matching page rows to
+  playlist items, planning the fewest API writes, phase sections.
+- `src/content` — page integration: `playlist-tools.ts`, `panel-tools.ts`,
+  `drag-select.ts`, `phase-store.ts`, `yt-dom.ts` (every YouTube selector),
+  and `ui/` (snackbar, menu, dialogs).
+- `src/background` — `chrome.identity` sign-in and the YouTube Data API client.
+- `src/styles/content.css` — styles built on YouTube's own theme variables.
 
-## Roadmap / TODO
+## Roadmap
 
-- [ ] **Apply sort to YouTube** (the planner already costs it; wire the writes).
-- [ ] **Export / import phases** as JSON.
-- [ ] **Move selected block** with finer position control.
-- [ ] **One-click duplicate removal** (detection already powers the filter).
-- [ ] **YouTube Music** support.
+- Drag a selected block to a new position.
+- Copy/move videos to another playlist.
+- Play the filtered results; shuffle without repeats.
+- Optional saving through YouTube's own endpoints (no Google Cloud setup).
 
 ## Disclaimer
 
-This is **personal / open-source tooling**, not a Chrome Web Store product. It
-edits real playlists through official Google APIs — use it on playlists you own,
-and remember that deletes are real. There is **no DOM-automation fallback**: if
-the API says no, y3s tells you why instead of faking it.
+Personal / open-source tooling, not a Chrome Web Store product. It edits real
+playlists through official Google APIs; use it on playlists you own.
 
 ## License
 
