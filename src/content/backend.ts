@@ -3,7 +3,7 @@
 
 import type { ServerItem } from "../core/plan";
 import { sendMessage, type Command } from "../shared/messages";
-import type { ApiError, ApplyResult, Change, PlaylistAccess, Result } from "../shared/types";
+import type { ApiError, ApplyResult, Change, MyPlaylist, PlaylistAccess, Result } from "../shared/types";
 
 export interface ServerTrack extends ServerItem {
   title: string;
@@ -17,6 +17,12 @@ export interface Backend {
   apply(
     playlistId: string,
     changes: Change[],
+    onProgress: (done: number, total: number) => void,
+  ): Promise<ApplyResult>;
+  myPlaylists(): Promise<MyPlaylist[]>;
+  addVideos(
+    playlistId: string,
+    videoIds: string[],
     onProgress: (done: number, total: number) => void,
   ): Promise<ApplyResult>;
 }
@@ -56,6 +62,18 @@ export const chromeBackend: Backend = {
     progressListeners.set(playlistId, onProgress);
     try {
       return unwrap(await sendMessage({ type: "APPLY_CHANGES", playlistId, changes }));
+    } finally {
+      progressListeners.delete(playlistId);
+    }
+  },
+  async myPlaylists() {
+    return unwrap(await sendMessage({ type: "LIST_MY_PLAYLISTS" }));
+  },
+  async addVideos(playlistId, videoIds, onProgress) {
+    listen();
+    progressListeners.set(playlistId, onProgress);
+    try {
+      return unwrap(await sendMessage({ type: "ADD_TO_PLAYLIST", playlistId, videoIds }));
     } finally {
       progressListeners.delete(playlistId);
     }

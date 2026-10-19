@@ -3,7 +3,7 @@
   "name": "y3s — playlist tools for YouTube",
   "short_name": "y3s",
   "version": "0.4.0",
-  "description": "Filter, sort, multi-select, keyboard navigation and bulk edits, built into YouTube's own playlist pages.",
+  "description": "Filter, sort, multi-select, phases and bulk edits, built into YouTube's and YouTube Music's own playlist pages.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv4yAOO+qbFd+4OP8MHj+zfiZ4xW7Lk0WuvY6R3M96VwM5NqKr8pvjupxAsU3Kh2iawMHBvjgkV+2UhFmKGk/NorNa3d18YSktpok/5jazUL8R1YdgPzBlvcEcHygh1EY/aKnTB6AVoxKAjz0O4ibwsXck9HH4CGJl5OFMlF7SCR/LUTV9DnCTveoAXQry7xbAEzfdYclq+ETIjaBHJ5LibyMDBVNnUCUUWCSiAUjWviWWsyxn3YTY3m5gyliFVFXMO+JxbZTeSDZKESKc0kLs6sS/Wh48hEr8pJ1wDYKdPjCJ16SOb6C25+RVnzz5LmZvg2UHKI/5X8LPaFhZcKAcwIDAQAB",
   "icons": {
     "16": "icons/icon16.png",
@@ -17,7 +17,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.youtube.com/*"
+        "https://www.youtube.com/*",
+        "https://music.youtube.com/*"
       ],
       "js": [
         "content.js"
@@ -41,5 +42,13 @@
       "https://www.googleapis.com/auth/youtube"
     ]
   },
-  "minimum_chrome_version": "114"
+  "minimum_chrome_version": "114",
+  "action": {
+    "default_title": "y3s: check this page",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
 }

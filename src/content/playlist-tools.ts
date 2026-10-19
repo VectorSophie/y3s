@@ -42,11 +42,11 @@ import { chromeBackend, type Backend, type ServerTrack } from "./backend";
 import { DragSelect } from "./drag-select";
 import { savePlay } from "./phase-player";
 import { loadPhases, savePhases, type StoredAnchor, type StoredPhase } from "./phase-store";
-import { confirmDialog, isDialogOpen, openHelp } from "./ui/dialog";
+import { confirmDialog, isDialogOpen, openHelp, pickDialog } from "./ui/dialog";
 import { h, icon, ICONS, isEditable } from "./ui/dom";
 import { closeMenu, isMenuOpen, toggleMenu, type MenuItem } from "./ui/menu";
-import { showSnack } from "./ui/snackbar";
-import { currentPlaylistId, readRow, SEL, type Row } from "./yt-dom";
+import { hideSnack, showSnack } from "./ui/snackbar";
+import { currentPlaylistId, listContents, readRow, SEL, site, type Row } from "./yt-dom";
 
 export type Access = "checking" | "unconfigured" | "signed-out" | "view-only" | "editable" | "error";
 
@@ -66,6 +66,13 @@ interface Snapshot {
 const ITEM = "y3sItem"; // dataset: playlistItemId of a row
 const ORIG = "y3sOrig"; // dataset: row's position in YouTube's own view
 const KEY = "y3sKey"; // dataset: key of a row or phase divider in sequences
+
+/** Lists apps can read but not edit, and why. */
+const SPECIAL_LISTS: Record<string, string> = {
+  WL: "YouTube doesn't let apps change Watch Later; use its ⋮ menu to remove videos",
+  LL: "Liked videos follow your likes; unlike a video to remove it",
+  LM: "Liked music follows your likes; unlike a song to remove it",
+};
 
 const SPLIT_SIZES = [25, 50, 100];
 
@@ -101,6 +108,10 @@ export class PlaylistTools {
 
   // syncing with YouTube
   private accessError = "";
+  /** Why a view-only playlist can't be changed, in words for the user. */
+  private viewOnlyWhy = "Only the playlist's owner can change it";
+  /** Signed in to Google (needed for Save to playlist, even when view-only). */
+  signedIn = false;
   private server: ServerItem[] | null = null;
   private serverTitles = new Map<string, string>();
   private hiddenUnavailable: string[] = [];
@@ -134,12 +145,13 @@ export class PlaylistTools {
   private selectAllBtn!: HTMLButtonElement;
   private moveBtns!: HTMLButtonElement[];
   private removeBtn!: HTMLButtonElement;
+  private saveToBtn!: HTMLButtonElement;
   private toPhaseBtn!: HTMLButtonElement;
   private newPhaseBtn!: HTMLButtonElement;
 
   constructor(list: HTMLElement, private backend: Backend = chromeBackend) {
     this.list = list;
-    this.contents = list.querySelector<HTMLElement>("#contents") ?? list;
+    this.contents = listContents(list);
     this.playlistId = currentPlaylistId();
     this.bar = this.buildBar();
     this.empty = h(
@@ -148,7 +160,10 @@ export class PlaylistTools {
       h("p", { class: "y3s-empty-title", text: "No videos match" }),
       h("button", { class: "y3s-btn", text: "Clear filters", onclick: () => this.clearFilters() }),
     );
-    list.before(this.bar, this.empty);
+    // On YouTube the bar sits above the list; YouTube Music's list shares a
+    // row with the playlist header, so the bar goes inside it instead.
+    if (site() === "music" && this.contents !== list) this.contents.before(this.bar, this.empty);
+    else list.before(this.bar, this.empty);
     this.obs = new MutationObserver(() => {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = window.setTimeout(() => this.refresh(), 100);
@@ -156,7 +171,7 @@ export class PlaylistTools {
     this.obs.observe(this.contents, { childList: true });
     this.drag = new DragSelect(this.contents, {
       rows: () => this.visibleRows(),
-      topInset: () => Math.max(56, this.bar.getBoundingClientRect().bottom),
+      topInset: () => Math.max(SEL.stickyTop, this.bar.getBoundingClientRect().bottom),
       begin: (additive) => {
         this.dragBase = additive ? new Set(this.selected) : new Set();
         closeMenu();
@@ -472,7 +487,7 @@ export class PlaylistTools {
 
     this.selCount = h("span", { class: "y3s-sel-count" });
     const act = (label: string, ic: string, fn: (e: MouseEvent) => void) =>
-      h("button", { class: "y3s-btn", onclick: fn }, icon(ic), h("span", { text: label }));
+      h("button", { class: "y3s-btn", title: label, "aria-label": label, onclick: fn }, icon(ic), h("span", { text: label }));
     this.selectAllBtn = h("button", { class: "y3s-btn y3s-btn-text", onclick: () => this.selectAllVisible() });
     this.moveBtns = [
       act("Move to top", ICONS.top, () => void this.moveTo("top")),
@@ -480,6 +495,7 @@ export class PlaylistTools {
     ];
     this.toPhaseBtn = act("Move to phase", ICONS.phases, () => this.openMoveToPhase(this.toPhaseBtn));
     this.newPhaseBtn = act("New phase", ICONS.addPhase, () => void this.newPhaseFromSelection());
+    this.saveToBtn = act("Save to…", ICONS.saveTo, () => void this.saveSelectionTo());
     this.removeBtn = act("Remove", ICONS.trash, () => this.removeSelected());
     const selecting = h(
       "div",
@@ -498,6 +514,7 @@ export class PlaylistTools {
         ...this.moveBtns,
         this.newPhaseBtn,
         this.toPhaseBtn,
+        this.saveToBtn,
         this.removeBtn,
       ),
     );
@@ -530,7 +547,7 @@ export class PlaylistTools {
     this.accountBtn.textContent = acct[this.access] ?? "";
     this.accountBtn.disabled = this.access === "view-only";
     this.accountBtn.title =
-      this.access === "view-only" ? "You can filter, sort and section this playlist, but only its owner can change it" : "";
+      this.access === "view-only" ? `You can filter, sort, select and section it. ${this.viewOnlyWhy}.` : "";
 
     this.chipEls.dups.textContent = dupRows ? `Duplicates · ${dupRows}` : "Duplicates";
     this.chipEls.unavail.textContent = unavail ? `Unavailable · ${unavail}` : "Unavailable";
@@ -723,7 +740,7 @@ export class PlaylistTools {
         showSnack("Sign in to edit your playlists", { label: "Sign in", run: () => void this.signIn() });
         return true;
       case "view-only":
-        showSnack("Only the playlist's owner can change it");
+        showSnack(this.viewOnlyWhy);
         return true;
       case "error":
         showSnack(this.accessError || "Couldn't check this playlist", {
@@ -841,6 +858,63 @@ export class PlaylistTools {
     if (anchor) anchor.click();
     else location.assign(watchUrl(state, items[state.order[0]]));
   }
+  /** Copy the selected videos to the end of one of your playlists. */
+  async saveSelectionTo(): Promise<void> {
+    const ids = this.orderedSelection()
+      .map((r) => this.data.get(r)?.videoId)
+      .filter((v): v is string => !!v);
+    if (!ids.length) return;
+    if (this.access === "unconfigured") {
+      showSnack(messageForError({ code: "AUTH_NOT_CONFIGURED", message: "" }));
+      return;
+    }
+    if (!this.signedIn) {
+      showSnack("Sign in to save videos to your playlists", { label: "Sign in", run: () => void this.signIn() });
+      return;
+    }
+    let mine;
+    try {
+      showSnack("Loading your playlists…", undefined, 0);
+      mine = (await this.backend.myPlaylists()).filter((p) => p.id !== this.playlistId);
+      hideSnack();
+    } catch (e) {
+      showSnack(`Couldn't load your playlists: ${messageForError(e as ApiError)}`);
+      return;
+    }
+    const target = await pickDialog({
+      title: `Save ${count(ids.length, "video")} to…`,
+      placeholder: "Search your playlists",
+      empty: mine.length ? "No playlist matches" : "You don't have other playlists yet",
+      items: mine.map((p) => ({ id: p.id, label: p.title, meta: count(p.itemCount, "video") })),
+    });
+    if (!target) return;
+    const name = mine.find((p) => p.id === target)?.title ?? "playlist";
+    if (ids.length > CONFIRM_WRITES_OVER) {
+      const units = ids.length * QUOTA_COST.insert;
+      const ok = await confirmDialog({
+        title: `Save ${count(ids.length, "video")} to ${name}?`,
+        body: [`This uses about ${units.toLocaleString()} of your ${DAILY_QUOTA.toLocaleString()} daily YouTube API units.`],
+        confirm: "Save",
+        cancel: "Cancel",
+      });
+      if (!ok) return;
+    }
+    showSnack(ids.length > 1 ? `Saving 0 of ${ids.length}…` : "Saving…", undefined, 0);
+    let res;
+    try {
+      res = await this.backend.addVideos(target, ids, (d, t) => showSnack(`Saving ${d} of ${t}…`, undefined, 0));
+    } catch (e) {
+      res = { applied: 0, error: e as ApiError };
+    }
+    const open = { label: "Open", run: () => location.assign(`/playlist?list=${encodeURIComponent(target)}`) };
+    if (res.error) {
+      showSnack(`Saved ${res.applied} of ${ids.length} to ${name}: ${messageForError(res.error)}`, open, 0);
+    } else {
+      showSnack(`Saved ${count(ids.length, "video")} to ${name}`, open);
+      this.clearSelection();
+    }
+  }
+
   playSelected(): void {
     const sel = this.orderedSelection();
     this.playRows(sel, sel.length === 1 ? "this video" : `${count(sel.length, "selected video")}`);
@@ -1403,15 +1477,33 @@ export class PlaylistTools {
     const start = Date.now();
     let last = this.rows().length;
     let stuckSince = Date.now();
+    // YouTube loads more when its "continuation" marker scrolls into view.
+    // With phases folded the list has almost no height, so the marker would
+    // sit on screen forever and never trigger again: unfold while loading.
+    this.list.classList.add("y3s-loading-all");
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let nudge = false;
     while (this.continuation() && gen === this.generation && Date.now() - start < 180_000) {
-      this.continuation()?.scrollIntoView({ block: "end" });
-      await new Promise((r) => setTimeout(r, 400));
+      const cont = this.continuation()!;
+      if (nudge) {
+        // It only fires when the marker *enters* the view: if it's been in
+        // view all along, scroll it out and back.
+        scrollTo({ top: Math.max(0, cont.getBoundingClientRect().top + scrollY - 2 * innerHeight) });
+        await wait(150);
+      }
+      cont.scrollIntoView({ block: "end" });
+      await wait(400);
       const n = this.rows().length;
       if (n !== last) {
         last = n;
         stuckSince = Date.now();
-      } else if (Date.now() - stuckSince > 8000) break;
+        nudge = false;
+      } else {
+        nudge = true;
+        if (Date.now() - stuckSince > 8000) break;
+      }
     }
+    this.list.classList.remove("y3s-loading-all");
     if (gen !== this.generation) return;
     scrollTo({ top: y });
     this.loading = false;
@@ -1438,9 +1530,13 @@ export class PlaylistTools {
     this.render();
     let access: Access;
     let server: ServerTrack[] | null = null;
+    const special = id ? SPECIAL_LISTS[id] : undefined;
+    this.viewOnlyWhy = special ?? "Only the playlist's owner can change it";
     try {
       const st = await this.backend.authStatus();
-      if (!id) access = "view-only";
+      this.signedIn = st.signedIn;
+      // Watch Later and Liked videos can't be edited through the API.
+      if (!id || special) access = "view-only";
       else if (!st.configured) access = "unconfigured";
       else if (!st.signedIn) access = "signed-out";
       else {
@@ -1467,7 +1563,7 @@ export class PlaylistTools {
 
   async signIn(): Promise<void> {
     if (this.access === "error") return this.loadAccess();
-    if (this.access !== "signed-out") return;
+    if (this.signedIn) return;
     try {
       await this.backend.signIn();
     } catch (e) {
@@ -1585,6 +1681,19 @@ export class PlaylistTools {
     if (this.resave) {
       this.resave = false;
       this.scheduleSave();
+    }
+  }
+
+  /**
+   * True when leaving now would lose edits: a batch too big to save without
+   * asking is waiting (on its undo timer or in the confirm dialog).
+   */
+  needsLeaveWarning(): boolean {
+    if (!this.canEdit || this.saving || (!this.saveTimer && !isDialogOpen())) return false;
+    try {
+      return this.pendingChanges().length > CONFIRM_WRITES_OVER;
+    } catch {
+      return false;
     }
   }
 

@@ -1,7 +1,7 @@
 // Typed message passing between the content script and the service worker.
 // Every request has a `type` discriminant; every response is a Result<T>.
 
-import type { ApplyResult, Change, PlaylistAccess, PlaylistSnapshot, Result } from "./types";
+import type { ApplyResult, Change, MyPlaylist, PlaylistAccess, PlaylistSnapshot, Result } from "./types";
 
 /** Requests: content script → service worker. */
 export type Request =
@@ -10,7 +10,9 @@ export type Request =
   | { type: "AUTH_STATUS" }
   | { type: "FETCH_PLAYLIST_ITEMS"; playlistId: string }
   | { type: "GET_PLAYLIST_ACCESS"; playlistId: string }
-  | { type: "APPLY_CHANGES"; playlistId: string; changes: Change[] };
+  | { type: "APPLY_CHANGES"; playlistId: string; changes: Change[] }
+  | { type: "LIST_MY_PLAYLISTS" }
+  | { type: "ADD_TO_PLAYLIST"; playlistId: string; videoIds: string[] };
 
 /** Successful response data for each request type. */
 export interface ResponseData {
@@ -20,10 +22,14 @@ export interface ResponseData {
   FETCH_PLAYLIST_ITEMS: PlaylistSnapshot;
   GET_PLAYLIST_ACCESS: PlaylistAccess;
   APPLY_CHANGES: ApplyResult;
+  LIST_MY_PLAYLISTS: MyPlaylist[];
+  ADD_TO_PLAYLIST: ApplyResult;
 }
 
 /** Pushes: service worker → content script. */
-export type Command = { type: "APPLY_PROGRESS"; playlistId: string; done: number; total: number };
+export type Command =
+  | { type: "APPLY_PROGRESS"; playlistId: string; done: number; total: number }
+  | { type: "PAGE_CHECK" };
 
 type RequestOf<T extends Request["type"]> = Extract<Request, { type: T }>;
 

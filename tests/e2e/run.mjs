@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { playlistPage, silentWav, startApi, watchPage } from "./fake-youtube.mjs";
+import { musicPlaylistPage, playlistPage, silentWav, startApi, watchPage } from "./fake-youtube.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
@@ -83,6 +83,14 @@ await ctx.route("https://www.youtube.com/**", (route) => {
     return route.fulfill({ contentType: "text/html", body: watchPage(state.items, list, cur) });
   }
   if (u.pathname === "/watch_videos") return route.fulfill({ contentType: "text/html", body: "<!doctype html><title>queue</title>" });
+  return route.fulfill({ status: 204, body: "" });
+});
+
+await ctx.route("https://music.youtube.com/**", (route) => {
+  const u = new URL(route.request().url());
+  if (u.pathname === "/playlist") {
+    return route.fulfill({ contentType: "text/html", body: musicPlaylistPage(state.items, u.searchParams.get("list")) });
+  }
   return route.fulfill({ status: 204, body: "" });
 });
 
@@ -311,9 +319,22 @@ try {
   await page.reload();
   await page.waitForSelector(".y3s-bar");
   await page.click(".y3s-link >> text=Load all");
-  await waitFor(async () => (await page.$$(".y3s-phase")).length === 4 && !(await page.$(".y3s-link:not([hidden]) >> text=Load all")), 30000);
+  // Done loading means: no "load more" marker left and every video on the page.
+  await waitFor(
+    async () =>
+      (await page.$$(".y3s-phase")).length === 4 &&
+      !(await page.$("ytd-continuation-item-renderer")) &&
+      (await page.$$("ytd-playlist-video-renderer:not(.y3s-removed)")).length === state.items.filter((i) => !i.hidden).length,
+    30000,
+  );
   await sleep(300);
-  check(JSON.stringify(await layout()) === JSON.stringify(layoutBefore), "phases come back after a reload in the same places");
+  const layoutAfter = await layout();
+  const diffAt = layoutAfter.findIndex((x, i) => x !== layoutBefore[i]);
+  check(
+    JSON.stringify(layoutAfter) === JSON.stringify(layoutBefore),
+    "phases come back after a reload in the same places",
+    `first difference at ${diffAt}: before ${JSON.stringify(layoutBefore.slice(Math.max(0, diffAt - 2), diffAt + 3))} after ${JSON.stringify(layoutAfter.slice(Math.max(0, diffAt - 2), diffAt + 3))}; headers before ${JSON.stringify(layoutBefore.filter((x) => x.startsWith("[")))} after ${JSON.stringify(layoutAfter.filter((x) => x.startsWith("[")))}`,
+  );
   check((await page.$$(".y3s-phase.y3s-folded")).length === 4, "and start folded");
 
   // play a phase: opens the first video inside the real playlist
@@ -377,6 +398,23 @@ try {
   check(outside === state.items.length - 3, "videos outside the phase are dimmed in the panel", String(outside));
   await shot("15-loop-pill");
 
+  // controls inside YouTube's player bar
+  const ytp = await page.textContent(".ytp-right-controls .y3s-ytp").catch(() => "");
+  check(/Looping Videos 51–53 · [123]\/3/.test(ytp), "player bar shows the phase and position", ytp);
+  await shot("16-player-bar");
+  // Shift+P goes back within the phase (YouTube would otherwise go on to the next video)
+  await waitFor(async () => visits.at(-1) === loopIds[1], 15000, 50);
+  const before1 = visits.length;
+  await page.keyboard.press("Shift+P");
+  await waitFor(async () => visits.length > before1, 5000, 50);
+  check(visits[before1] === loopIds[0], "Shift+P goes to the previous video of the phase", JSON.stringify(visits.slice(before1 - 1)));
+  // the player's own ⏭ steps within the phase
+  await waitFor(async () => visits.at(-1) === loopIds[2], 15000, 50);
+  const before2 = visits.length;
+  await page.click(".ytp-next-button");
+  await waitFor(async () => visits.length > before2, 5000, 50);
+  check(visits[before2] === loopIds[0], "the player's ⏭ on the phase's last video wraps to its first (not video 54)", JSON.stringify(visits.slice(before2 - 1)));
+
   // turn loop off: playback stops at the phase's last video
   await page.click('[aria-label="Loop phase"]');
   const count0 = visits.length;
@@ -418,7 +456,93 @@ try {
   check(!!(await waitFor(async () => /View only/.test(await page.textContent(".y3s-stats")))), "someone else's playlist is view only");
   await checkbox(0).click();
   const actions = await page.$$eval(".y3s-sel-actions .y3s-btn", (bs) => bs.filter((b) => !b.hidden).map((b) => b.textContent));
-  check(JSON.stringify(actions) === JSON.stringify(["Play", "New phase"]), "only Play and New phase are offered", JSON.stringify(actions));
+  check(JSON.stringify(actions) === JSON.stringify(["Play", "New phase", "Save to…"]), "only Play, New phase and Save to are offered", JSON.stringify(actions));
+
+  // copy two videos from someone else's playlist into one of mine
+  const otherIds = await pageIds();
+  await checkbox(2).click();
+  await page.click('.y3s-sel-actions >> text="Save to…"');
+  await page.waitForSelector(".y3s-pick-search");
+  check(
+    JSON.stringify(await page.$$eval(".y3s-pick-label", (e) => e.map((x) => x.textContent))) === JSON.stringify(["Late night queue", "Keepers", "Gym"]),
+    "Save to lists my playlists",
+  );
+  await page.keyboard.type("keep");
+  check(
+    JSON.stringify(await page.$$eval(".y3s-pick-item", (e) => e.filter((x) => x.getClientRects().length).map((x) => x.querySelector(".y3s-pick-label").textContent))) === JSON.stringify(["Keepers"]),
+    "typing narrows the list on screen",
+  );
+  await shot("17-save-to");
+  await page.keyboard.press("Enter");
+  const seen = [];
+  const savedOk = await waitFor(async () => {
+    const t = await snack();
+    if (t && seen.at(-1) !== t) seen.push(t);
+    return /Saved 2 videos to Keepers/.test(t) || (state.added.PLkeepers?.length === 2 && /Saved 2 videos/.test(seen.join("|")));
+  }, 20000, 50);
+  check(!!savedOk, "Save to reports success", seen.join(" → "));
+  check(JSON.stringify(state.added.PLkeepers) === JSON.stringify([otherIds[0], otherIds[2]]), "both videos were added to Keepers, in order", JSON.stringify(state.added));
+
+  // ── Watch Later: view only, with the reason
+  await page.goto("https://www.youtube.com/playlist?list=WL");
+  await page.waitForSelector(".y3s-bar");
+  await waitFor(async () => /View only/.test(await page.textContent(".y3s-stats")));
+  const wlTitle = await page.getAttribute(".y3s-stats .y3s-link >> text=View only", "title");
+  check(/Watch Later/.test(wlTitle ?? ""), "Watch Later is view only and says why", wlTitle);
+
+  // ── page check from the toolbar icon
+  const sw = ctx.serviceWorkers().find((w) => w.url().startsWith("chrome-extension://")) ?? (await ctx.waitForEvent("serviceworker"));
+  await sw.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    await chrome.tabs.sendMessage(tab.id, { type: "PAGE_CHECK" });
+  });
+  await page.waitForSelector(".y3s-check-pre", { timeout: 5000 });
+  const report = await page.textContent(".y3s-check-pre");
+  check(/rows: 9\d/.test(report) || /rows: \d+/.test(report), "page check opens with a report", report.split("\n").slice(0, 3).join(" | "));
+  check(/sign-in: signed in/.test(report) && !/Late night queue/.test(report), "report has status but no titles");
+  await shot("18-page-check");
+  await page.keyboard.press("Escape");
+
+  // ── YouTube Music playlist page
+  await page.goto(`https://music.youtube.com/playlist?list=${PL}`);
+  check(!!(await page.waitForSelector(".y3s-bar", { timeout: 10000 }).catch(() => null)), "YouTube Music: the bar appears on a playlist");
+  check(await page.evaluate(() => document.documentElement.classList.contains("y3s-music")), "YouTube Music styling is on");
+  await waitFor(async () => (await page.$$("ytmusic-responsive-list-item-renderer .y3s-cbwrap")).length === 40, 5000);
+  check((await page.$$("ytmusic-responsive-list-item-renderer .y3s-cbwrap")).length === 40, "YouTube Music rows get checkboxes");
+  const musicIds = () =>
+    page.$$eval("ytmusic-responsive-list-item-renderer:not(.y3s-removed)", (rows) =>
+      rows.map((r) => /v=([^&]+)/.exec(r.querySelector("a[href*='watch?v=']").getAttribute("href"))[1]),
+    );
+  await page.click(".y3s-search input");
+  await page.keyboard.type("jazz");
+  const mVis = await page.$$eval("ytmusic-responsive-list-item-renderer:not(.y3s-hidden)", (e) => e.length);
+  const mWant = state.items.slice(0, 40).filter((i) => !i.hidden && /jazz/i.test(`${i.title} ${i.channel}`)).length;
+  check(mVis === mWant && mVis > 0, "YouTube Music: filter works", `${mVis} vs ${mWant}`);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  const t0 = await page.locator("ytmusic-responsive-list-item-renderer .title a").nth(1).boundingBox();
+  const t3 = await page.locator("ytmusic-responsive-list-item-renderer .title a").nth(3).boundingBox();
+  await page.mouse.move(t0.x + 30, t0.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(t0.x + 30, t3.y + 5, { steps: 6 });
+  await page.mouse.up();
+  check((await page.$$eval("ytmusic-responsive-list-item-renderer.y3s-selected", (e) => e.length)) === 3, "YouTube Music: drag-select");
+  await shot("19-music-selection");
+  const mBefore = await musicIds();
+  const wM = state.writes.length;
+  await page.keyboard.press("t");
+  check(!!(await waitFor(async () => /Moved 3 videos to top/.test(await snack()), 30000)), "YouTube Music: move to top");
+  const nM = await waitSaved(wM, "YouTube Music move");
+  check(nM >= 1 && nM <= 3, "YouTube Music: saved with at most 3 writes", String(nM));
+  check(JSON.stringify(serverIds().filter((v, i, a) => a.indexOf(v) === i).slice(0, 3)) === JSON.stringify(mBefore.slice(1, 4)) || JSON.stringify((await musicIds()).slice(0, 3)) === JSON.stringify(mBefore.slice(1, 4)), "YouTube Music: those videos are first now");
+  await page.keyboard.press("Escape");
+  await page.click(".y3s-chip >> text=/^Phases/");
+  await page.click('.y3s-menu-item >> text="Split into phases of 25"');
+  check(!!(await waitFor(async () => (await page.$$(".y3s-phase")).length === 4, 30000)), "YouTube Music: phases");
+  await page.evaluate(() => scrollTo(0, 0));
+  await shot("20-music-phases");
+  await page.click(".y3s-chip >> text=/^Phases/");
+  await page.click('.y3s-menu-item >> text="Clear all phases"');
 
   // ── watch page panel
   await page.goto(`https://www.youtube.com/watch?v=${serverIds()[10]}&list=${PL}`);

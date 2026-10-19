@@ -32,3 +32,7 @@ import { vi } from "vitest";
 // jsdom has no layout.
 Element.prototype.scrollIntoView = function () {};
 window.scrollTo = (() => {}) as typeof window.scrollTo;
+
+// jsdom has no media playback.
+HTMLMediaElement.prototype.pause = function () {};
+HTMLMediaElement.prototype.play = async function () {};

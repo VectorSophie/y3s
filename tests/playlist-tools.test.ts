@@ -63,6 +63,20 @@ class FakeBackend implements Backend {
   order() {
     return this.server.map((s) => s.videoId);
   }
+  saved: { playlistId: string; videoIds: string[] }[] = [];
+  mine = [
+    { id: "PL1", title: "This one", itemCount: 9 },
+    { id: "PLjazz", title: "Jazz keepers", itemCount: 12 },
+    { id: "PLgym", title: "Gym", itemCount: 3 },
+  ];
+  async myPlaylists() {
+    return this.mine;
+  }
+  async addVideos(playlistId: string, videoIds: string[], onProgress: (d: number, t: number) => void): Promise<ApplyResult> {
+    this.saved.push({ playlistId, videoIds });
+    onProgress(videoIds.length, videoIds.length);
+    return { applied: videoIds.length };
+  }
 }
 
 const vids = (n: number): V[] => Array.from({ length: n }, (_, i) => ({ id: `v${i}`, title: `Video ${i}` }));
@@ -339,7 +353,7 @@ describe("permissions", () => {
     const labels = [...tools.bar.querySelectorAll<HTMLElement>(".y3s-sel-actions .y3s-btn")]
       .filter((b) => !b.hidden)
       .map((b) => b.textContent);
-    expect(labels).toEqual(["Play", "New phase"]);
+    expect(labels).toEqual(["Play", "New phase", "Save to…"]);
     await tools.sortBy("title");
     expect(pageOrder()).toEqual(["a", "b"]);
     expect(snackText()).toContain("only on this page");
@@ -644,4 +658,75 @@ test("rows that arrive just before an edit are included in it", async () => {
   await tools.sortBy("reverse");
   tools.setAllCollapsed(false);
   expect(layout()).toEqual(["[Videos 1–3]", "v2", "v1", "v0", "[Videos 4–6]", "v5", "v4", "v3"]);
+});
+
+
+// ─────────────────────────────────────────────── other surfaces
+
+describe("save to another playlist", () => {
+  test("pick a playlist from a searchable list; videos are added in page order", async () => {
+    const v = vids(5);
+    const be = new FakeBackend(tracks(v), { signedIn: true, owned: false });
+    tools = new PlaylistTools(mount(v), be);
+    await ready(tools);
+    click(rowEl(3).querySelector(".y3s-cbwrap")!);
+    click(rowEl(1).querySelector(".y3s-cbwrap")!);
+    const done = tools.saveSelectionTo();
+    await vi.advanceTimersByTimeAsync(10);
+    const dialog = document.querySelector(".y3s-dialog")!;
+    expect(dialog.textContent).toContain("Save 2 videos to…");
+    const names = () => [...dialog.querySelectorAll<HTMLElement>(".y3s-pick-item:not([hidden]) .y3s-pick-label")].map((e) => e.textContent);
+    expect(names()).toEqual(["Jazz keepers", "Gym"]); // not the playlist we're on
+    const input = dialog.querySelector<HTMLInputElement>(".y3s-pick-search")!;
+    input.value = "jaz";
+    input.dispatchEvent(new Event("input"));
+    expect(names()).toEqual(["Jazz keepers"]);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await done;
+    expect(be.saved).toEqual([{ playlistId: "PLjazz", videoIds: ["v1", "v3"] }]);
+    expect(snackText()).toContain("Saved 2 videos to Jazz keepers");
+    expect(tools.selectedCount).toBe(0);
+  });
+
+  test("signed out: asks to sign in first", async () => {
+    const v = vids(2);
+    const be = new FakeBackend(tracks(v), { signedIn: false, owned: false });
+    tools = new PlaylistTools(mount(v), be);
+    await ready(tools);
+    click(rowEl(0).querySelector(".y3s-cbwrap")!);
+    await tools.saveSelectionTo();
+    expect(snackText()).toContain("Sign in");
+    expect(document.querySelector(".y3s-dialog")).toBeNull();
+  });
+});
+
+describe("watch later and liked videos", () => {
+  test("are view only with a reason, but filter/sort/phases/save-to still work", async () => {
+    const v = vids(3);
+    history.replaceState(null, "", "/playlist?list=WL");
+    document.body.innerHTML = mount(v).outerHTML;
+    history.replaceState(null, "", "/playlist?list=WL");
+    const be = new FakeBackend(tracks(v), { signedIn: true, owned: true });
+    tools = new PlaylistTools(document.querySelector("ytd-playlist-video-list-renderer")!, be);
+    await ready(tools);
+    expect(tools.access).toBe("view-only");
+    click(rowEl(0).querySelector(".y3s-cbwrap")!);
+    tools.removeSelected();
+    expect(snackText()).toContain("Watch Later");
+    expect(pageOrder()).toHaveLength(3);
+    await tools.sortBy("reverse");
+    expect(pageOrder()).toEqual(["v2", "v1", "v0"]);
+  });
+});
+
+test("leaving with a big unsaved batch asks first; small ones don't", async () => {
+  const v = vids(30);
+  tools = new PlaylistTools(mount(v), new FakeBackend(tracks(v)));
+  await ready(tools);
+  click(rowEl(29).querySelector(".y3s-cbwrap")!);
+  await tools.moveTo("top");
+  expect(tools.needsLeaveWarning()).toBe(false);
+  tools.undo();
+  await tools.sortBy("reverse");
+  expect(tools.needsLeaveWarning()).toBe(true);
 });

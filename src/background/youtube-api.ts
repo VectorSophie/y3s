@@ -3,7 +3,7 @@
 
 import { API_BASE, PAGE_SIZE } from "../shared/constants";
 import { apiError, formatDuration } from "../shared/utils";
-import type { ApiError, PlaylistAccess, PlaylistSnapshot, Track } from "../shared/types";
+import type { ApiError, MyPlaylist, PlaylistAccess, PlaylistSnapshot, Track } from "../shared/types";
 import { getAuthToken, invalidateToken } from "./auth";
 
 interface PlaylistItemsResponse {
@@ -102,6 +102,25 @@ export async function getPlaylistAccess(playlistId: string): Promise<PlaylistAcc
   const snip = data.items?.[0]?.snippet;
   if (!snip) throw apiError("NOT_FOUND", "");
   return { title: snip.title, owned: snip.channelId === mine };
+}
+
+/** Every playlist the signed-in user owns (1 quota unit per 50). */
+export async function listMyPlaylists(): Promise<MyPlaylist[]> {
+  const out: MyPlaylist[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({ part: "snippet,contentDetails", mine: "true", maxResults: "50" });
+    if (pageToken) params.set("pageToken", pageToken);
+    const data = await authedGet<{
+      nextPageToken?: string;
+      items?: Array<{ id: string; snippet: { title: string }; contentDetails?: { itemCount?: number } }>;
+    }>(`/playlists?${params}`);
+    for (const p of data.items ?? []) {
+      out.push({ id: p.id, title: p.snippet.title, itemCount: p.contentDetails?.itemCount ?? 0 });
+    }
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return out;
 }
 
 export async function deletePlaylistItem(playlistItemId: string): Promise<void> {

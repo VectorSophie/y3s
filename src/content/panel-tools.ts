@@ -17,7 +17,7 @@ export class PanelTools {
 
   constructor(panel: HTMLElement) {
     this.panel = panel;
-    this.items = panel.querySelector<HTMLElement>("#items")!;
+    this.items = panel.querySelector<HTMLElement>(SEL.panelItems)!;
     this.input = h("input", {
       type: "text",
       placeholder: "Filter playlist",
@@ -31,7 +31,7 @@ export class PanelTools {
         if (e.key === "Enter") {
           e.preventDefault();
           const first = this.visible()[0];
-          if (first) readRow(first).anchor?.click();
+          if (first) (readRow(first).anchor ?? first.querySelector<HTMLElement>("ytmusic-play-button-renderer, .song-title") ?? first).click();
         } else if (e.key === "Escape") {
           e.preventDefault();
           if (this.input.value) this.setQuery("");
@@ -91,7 +91,7 @@ export class PanelTools {
   }
 
   rows(): HTMLElement[] {
-    return [...this.items.querySelectorAll<HTMLElement>(`:scope > ${SEL.panelRow}`)];
+    return [...this.items.querySelectorAll<HTMLElement>(SEL.panelRow)];
   }
   visible(): HTMLElement[] {
     return this.rows().filter((r) => !r.classList.contains("y3s-hidden"));

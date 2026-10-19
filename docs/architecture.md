@@ -45,6 +45,23 @@ in `chrome.storage.local` as "after this row" (playlistItemId, or video id +
 which copy), restored folded on load, re-placed as lazy-loaded rows arrive,
 and put back if YouTube re-renders the list.
 
+## Phase playback
+
+`core/phase-play.ts` holds a per-tab session (sessionStorage): the phase's
+videos, play order, loop/shuffle. `content/phase-player.ts` drives it on the
+watch page and in the miniplayer: it finishes each phase video a moment
+before the end and opens the next one (or lets YouTube's autoplay do it when
+that's the same video), sends the player back if autoplay lands outside the
+phase, takes over the player's ⏮ ⏭ and Shift+P/N (YouTube Music: j/k), and
+puts its controls into the player bar.
+
+## Sites
+
+`content/yt-dom.ts` has one selector set per site (YouTube, YouTube Music);
+everything else goes through it. The toolbar icon opens a page check that
+counts what each selector finds, without page content, for quick fixes when
+YouTube changes its markup.
+
 ## Guards
 
 - Ownership: `playlists.list` channel vs `channels.list?mine=true`. Not yours

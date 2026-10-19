@@ -82,3 +82,9 @@ export function setShuffle(s: PlayState, on: boolean, random: () => number = Mat
 export function watchUrl(s: PlayState, item: PlayItem): string {
   return `/watch?v=${encodeURIComponent(item.videoId)}&list=${encodeURIComponent(s.playlistId)}&index=${item.index}`;
 }
+
+/** The state for "previous in phase": one back, wrapping only when looping. */
+export function back(s: PlayState): PlayState {
+  if (s.pos > 0) return { ...s, pos: s.pos - 1 };
+  return s.loop ? { ...s, pos: s.order.length - 1 } : s;
+}

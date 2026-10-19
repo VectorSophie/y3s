@@ -28,6 +28,13 @@ export interface PlaylistAccess {
   owned: boolean;
 }
 
+/** One of the signed-in user's playlists. */
+export interface MyPlaylist {
+  id: string;
+  title: string;
+  itemCount: number;
+}
+
 /** One write against the YouTube Data API. */
 export type Change =
   | { kind: "delete"; playlistItemId: string; videoId: string }

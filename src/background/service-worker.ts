@@ -9,6 +9,8 @@ import {
   deletePlaylistItem,
   fetchPlaylistItems,
   getPlaylistAccess,
+  insertPlaylistItem,
+  listMyPlaylists,
   resetIdentity,
   updatePlaylistItemPosition,
 } from "./youtube-api";
@@ -18,6 +20,13 @@ chrome.runtime.onMessage.addListener((message: Request, sender, sendResponse) =>
     .then((data) => sendResponse({ ok: true, data } satisfies Result<unknown>))
     .catch((err) => sendResponse({ ok: false, error: toApiError(err) } satisfies Result<unknown>));
   return true; // async response
+});
+
+// Toolbar icon: show the page check on the YouTube tab.
+chrome.action?.onClicked.addListener((tab) => {
+  if (tab.id == null) return;
+  const cmd: Command = { type: "PAGE_CHECK" };
+  chrome.tabs.sendMessage(tab.id, cmd).catch(() => undefined);
 });
 
 async function handle(message: Request, tabId?: number): Promise<unknown> {
@@ -40,6 +49,10 @@ async function handle(message: Request, tabId?: number): Promise<unknown> {
       return getPlaylistAccess(message.playlistId);
     case "APPLY_CHANGES":
       return enqueue(message.playlistId, () => applyChanges(message.playlistId, message.changes, tabId));
+    case "LIST_MY_PLAYLISTS":
+      return listMyPlaylists();
+    case "ADD_TO_PLAYLIST":
+      return enqueue(message.playlistId, () => addVideos(message.playlistId, message.videoIds, tabId));
   }
 }
 
@@ -81,6 +94,22 @@ export async function applyChanges(playlistId: string, changes: Change[], tabId?
     progress(i + 1);
   }
   return { applied: changes.length };
+}
+
+/** Add videos to the end of a playlist, in order, stopping at the first failure. */
+export async function addVideos(playlistId: string, videoIds: string[], tabId?: number): Promise<ApplyResult> {
+  for (let i = 0; i < videoIds.length; i++) {
+    try {
+      await insertPlaylistItem({ playlistId, videoId: videoIds[i] });
+    } catch (err) {
+      return { applied: i, error: toApiError(err) };
+    }
+    if (tabId != null) {
+      const cmd: Command = { type: "APPLY_PROGRESS", playlistId, done: i + 1, total: videoIds.length };
+      chrome.tabs.sendMessage(tabId, cmd).catch(() => undefined);
+    }
+  }
+  return { applied: videoIds.length };
 }
 
 function toApiError(err: unknown): ApiError {

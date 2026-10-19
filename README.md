@@ -1,12 +1,13 @@
 # y3s — *YouTube is Somehow Still Shit*
 
 A Manifest V3 Chrome extension that adds power tools to YouTube's own playlist
-pages: filter, sort, multi-select, keyboard navigation and bulk edits. Nothing
-is replaced; the tools sit in YouTube's page and use YouTube's own look
+pages: filter, sort, multi-select, phases, keyboard navigation and bulk edits.
+Nothing is replaced; the tools sit in YouTube's page and use YouTube's own look
 (chips, menus, checkboxes, the bottom-left message with **Undo**), following
 your light or dark theme.
 
-> Works on **regular YouTube** (`youtube.com`), not `music.youtube.com`.
+> Works on **YouTube** (`www.youtube.com`) and, as a first pass, on
+> **YouTube Music** (`music.youtube.com`) playlists.
 
 ## What you get
 
@@ -49,11 +50,43 @@ your light or dark theme.
     other move. The dividers themselves live only in y3s, saved per playlist
     on this computer until you choose *Clear all phases*. The main **Sort**
     sorts inside each phase.
+- **Save to…** copies the selected videos to the end of one of your
+  playlists (searchable list). Works on any playlist, including someone
+  else's.
 - **Load all** pulls in the rest of a long playlist so filters cover it.
 - Total runtime next to the video count.
 
 **On a watch page** with a playlist: a filter field in the playlist panel
-(Enter plays the first match) and **Jump to now playing**.
+(Enter plays the first match) and **Jump to now playing**. While a phase
+plays:
+
+- The **player bar** shows the phase and position (*Looping Phase 2 · 3/25*)
+  with previous/next-in-phase, loop and shuffle, so it's there in theater and
+  fullscreen too.
+- YouTube's own ⏮ ⏭ buttons and **Shift+P / Shift+N** step through the phase
+  instead of the whole playlist (wrapping when looping).
+- When the next video of the phase is also the playlist's next, YouTube's own
+  autoplay does the hand-off; y3s only steps in at phase edges or when
+  shuffling.
+- It keeps going in the **miniplayer** while you browse other pages.
+
+**Elsewhere on YouTube**
+
+- **Watch Later** and **Liked videos** get the filter, sort, phases, play and
+  Save to…; they're view only, because YouTube doesn't let apps edit them.
+- YouTube's own **Save to playlist** sheet gets a search field once you have
+  more than a handful of playlists.
+- **Your playlists page** (`/feed/playlists`) gets a filter.
+
+**On YouTube Music** (first pass): playlist pages get the same filter, chips,
+sort, drag-select, phases, edits and Save to…, styled for Music's dark look.
+Phase playback works on the player page, with controls in Music's player bar
+and `j` / `k` stepping within the phase. Known gaps: no panel filter in the
+queue yet, and moving between phase videos reloads the player page.
+
+**Page check:** click the y3s toolbar icon on any YouTube page to see what y3s
+finds there (counts only, no titles), with a Copy button. Useful when YouTube
+changes its page and something stops showing up.
 
 ### How edits are saved
 
@@ -85,7 +118,8 @@ Data API. Undo inside that window and nothing is sent.
 | `p` | New phase (selection / here) | `c` / `Shift`+`c` | Fold this phase / all phases |
 | `?` | All shortcuts | | |
 
-No extra keys on the watch page, where YouTube's player shortcuts apply.
+On the watch page y3s only changes **Shift+N / Shift+P** (YouTube) or
+**j / k** (YouTube Music) while a phase is playing, so they stay in the phase.
 
 ## Limitations
 

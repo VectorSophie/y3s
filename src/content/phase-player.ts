@@ -11,6 +11,7 @@
 
 import {
   advance,
+  back,
   contains,
   current,
   locate,
@@ -21,7 +22,7 @@ import {
 } from "../core/phase-play";
 import { h, icon, ICONS } from "./ui/dom";
 import { showSnack } from "./ui/snackbar";
-import { findPlaylistPanel, SEL } from "./yt-dom";
+import { findPlaylistPanel, SEL, site } from "./yt-dom";
 
 const KEY = "y3s:play";
 /** Seconds before the end at which we move on ourselves. */
@@ -45,7 +46,37 @@ export function savePlay(s: PlayState | null): void {
   }
 }
 
-const videoParam = () => new URLSearchParams(location.search).get("v");
+const params = (href: string) => new URLSearchParams(href.split("?")[1] ?? "");
+
+/** YouTube's small player in the corner, while you browse other pages. */
+export function miniplayerActive(): boolean {
+  return (
+    location.pathname !== "/watch" &&
+    !!document.querySelector("ytd-app[miniplayer-is-active], ytd-miniplayer[active], ytd-miniplayer[enabled][active]")
+  );
+}
+
+function miniplayerRows(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>(`ytd-miniplayer ${SEL.panelRow}`)];
+}
+
+/** Playlist of the video in the miniplayer, read from its playlist panel. */
+export function miniplayerPlaylist(): string | null {
+  const a = miniplayerRows()[0]?.querySelector("a[href*='watch?v=']");
+  return a ? params(a.getAttribute("href")!).get("list") : null;
+}
+
+/** The video playing now: from the address on the watch page, else the miniplayer. */
+function videoParam(): string | null {
+  if (location.pathname === "/watch") return new URLSearchParams(location.search).get("v");
+  if (!miniplayerActive()) return null;
+  const sel = miniplayerRows().find((r) => r.hasAttribute("selected"));
+  const a = sel?.querySelector("a[href*='watch?v=']");
+  return a ? params(a.getAttribute("href")!).get("v") : null;
+}
+
+const isTyping = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 
 function mainVideo(): HTMLVideoElement | null {
   return (
@@ -69,8 +100,15 @@ export class PhasePlayer {
   private stopped = false;
   private redirects = 0;
 
+  private bar: HTMLElement | null = null;
+  private handoff = 0;
+
   constructor(state: PlayState) {
     this.s = state;
+    // The player's own ⏮ ⏭ buttons and Shift+P / Shift+N step through the
+    // phase instead of the whole playlist.
+    window.addEventListener("click", this.onPlayerClick, true);
+    window.addEventListener("keydown", this.onKey, true);
     this.tick();
   }
 
@@ -82,9 +120,14 @@ export class PhasePlayer {
   }
 
   destroy(): void {
+    clearTimeout(this.handoff);
+    window.removeEventListener("click", this.onPlayerClick, true);
+    window.removeEventListener("keydown", this.onKey, true);
     this.detachVideo();
     this.pill?.remove();
     this.pill = null;
+    this.bar?.remove();
+    this.bar = null;
     for (const r of document.querySelectorAll(".y3s-outside")) r.classList.remove("y3s-outside");
   }
 
@@ -177,7 +220,18 @@ export class PhasePlayer {
       return;
     }
     const target = current(next)!;
+    const from = current(this.s);
     this.update(next);
+    if (!next.shuffle && from && target.index === from.index + 1 && target.videoId !== playing) {
+      // The phase's next video is also the playlist's next one: let YouTube's
+      // own autoplay move on (smoother), and only step in if it doesn't.
+      this.update({ ...next, pending: target.videoId });
+      clearTimeout(this.handoff);
+      this.handoff = window.setTimeout(() => {
+        if (videoParam() === playing) this.go(target);
+      }, 4000);
+      return;
+    }
     if (target.videoId === playing) {
       // A one-video loop: rewind instead of navigating.
       this.jumpedFrom = null;
@@ -199,15 +253,75 @@ export class PhasePlayer {
   /** Open a video of the phase, through the playlist panel when possible. */
   private go(item: PlayItem): void {
     this.update({ ...this.s, pending: item.videoId });
-    const links = [...document.querySelectorAll<HTMLAnchorElement>(`${SEL.panelRow} a[href*="watch?v="]`)].filter(
+    const scope = miniplayerActive() ? "ytd-miniplayer " : "";
+    let links = [...document.querySelectorAll<HTMLAnchorElement>(`${scope}${SEL.panelRow} a[href*="watch?v="]`)].filter(
       (a) => new URLSearchParams(a.getAttribute("href")!.split("?")[1]).get("v") === item.videoId,
     );
+    // On the watch page, use the visible panel's links, not the miniplayer's copy.
+    if (!scope) links = links.filter((a) => !a.closest("ytd-miniplayer"));
     const best =
       links.find((a) => new URLSearchParams(a.getAttribute("href")!.split("?")[1]).get("index") === String(item.index)) ??
       links[0];
     if (best) best.click();
     else location.assign(watchUrl(this.s, item));
   }
+
+  /** ⏭: the next video of the phase (wraps when looping). */
+  next(): void {
+    const n = advance(this.s);
+    if (!n) {
+      showSnack(`That was the last video of ${this.s.name}`, { label: "Replay", run: () => this.restart() });
+      return;
+    }
+    this.finished = false;
+    this.update(n);
+    this.jumpedFrom = videoParam();
+    this.video?.pause();
+    this.go(current(n)!);
+  }
+
+  /** ⏮: back one video, or to the start of this one if it's been playing a while. */
+  prev(): void {
+    const vid = this.video;
+    if (vid && vid.currentTime > 3) {
+      vid.currentTime = 0;
+      return;
+    }
+    const p = back(this.s);
+    if (p === this.s) {
+      if (vid) vid.currentTime = 0;
+      return;
+    }
+    this.finished = false;
+    this.update(p);
+    this.jumpedFrom = videoParam();
+    this.go(current(p)!);
+  }
+
+  private onPlayerClick = (e: MouseEvent) => {
+    const t = e.target as Element | null;
+    const btn = t?.closest?.(`${SEL.playerNext}, ${SEL.playerPrev}`);
+    if (!btn || btn.closest(".y3s-ytp") || !contains(this.s, videoParam())) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (btn.matches(SEL.playerNext)) this.next();
+    else this.prev();
+  };
+
+  /** YouTube: Shift+N / Shift+P. YouTube Music: j / k. */
+  private onKey = (e: KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+    const k = e.key.toLowerCase();
+    const music = site() === "music";
+    const dir = music
+      ? !e.shiftKey && (k === "j" ? 1 : k === "k" ? -1 : 0)
+      : e.shiftKey && (k === "n" ? 1 : k === "p" ? -1 : 0);
+    if (!dir || !contains(this.s, videoParam())) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (dir > 0) this.next();
+    else this.prev();
+  };
 
   stop(message?: string): void {
     this.stopped = true;
@@ -219,6 +333,7 @@ export class PhasePlayer {
   // ─────────────────────────────────────────────────────────── UI
 
   private render(): void {
+    this.renderBar();
     const panel = findPlaylistPanel();
     if (panel !== this.pillPanel) {
       this.pill?.remove();
@@ -227,7 +342,7 @@ export class PhasePlayer {
     }
     if (panel && (!this.pill || !this.pill.isConnected)) {
       this.pill = this.buildPill();
-      const items = panel.querySelector("#items");
+      const items = panel.querySelector(SEL.panelItems);
       const filterBar = panel.querySelector(".y3s-panel-bar");
       (filterBar ?? items)?.before(this.pill);
     }
@@ -255,6 +370,45 @@ export class PhasePlayer {
       btn("Loop phase", ICONS.loop, () => this.toggleLoop(), "y3s-play-loop"),
       btn("Stop phase playback", ICONS.close, () => this.stop(`Stopped playing ${this.s.name}`)),
     );
+  }
+
+  /** Controls inside YouTube's player bar, so they're there in fullscreen too. */
+  private renderBar(): void {
+    const host = document.querySelector<HTMLElement>(SEL.playerControls);
+    if (!host) {
+      this.bar?.remove();
+      return;
+    }
+    if (!this.bar || this.bar.parentElement !== host) {
+      this.bar?.remove();
+      const btn = (label: string, ic: string, fn: () => void, cls: string) => {
+        const b = h(
+          "button",
+          { class: `ytp-button y3s-ytp-btn ${cls}`, "aria-label": label, title: label, "data-tooltip-title": label },
+          icon(ic),
+        );
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          fn();
+        });
+        return b;
+      };
+      this.bar = h(
+        "div",
+        { class: "y3s-ytp", role: "group", "aria-label": "Phase playback" },
+        h("span", { class: "y3s-ytp-label" }),
+        btn(`Previous in phase (${site() === "music" ? "k" : "Shift+P"})`, ICONS.prev, () => this.prev(), "y3s-ytp-prev"),
+        btn(`Next in phase (${site() === "music" ? "j" : "Shift+N"})`, ICONS.next, () => this.next(), "y3s-ytp-next"),
+        btn("Loop phase", ICONS.loop, () => this.toggleLoop(), "y3s-ytp-loop"),
+        btn("Shuffle within phase", ICONS.shuffle, () => this.toggleShuffle(), "y3s-ytp-shuffle"),
+      );
+      host.prepend(this.bar);
+    }
+    const b = this.bar;
+    const verb = this.finished ? "Finished" : this.s.loop ? "Looping" : "";
+    b.querySelector(".y3s-ytp-label")!.textContent = `${verb ? verb + " " : ""}${this.s.name} · ${this.s.pos + 1}/${this.s.items.length}`;
+    b.querySelector(".y3s-ytp-loop")!.setAttribute("aria-pressed", String(this.s.loop));
+    b.querySelector(".y3s-ytp-shuffle")!.setAttribute("aria-pressed", String(this.s.shuffle));
   }
 
   private fillPill(): void {

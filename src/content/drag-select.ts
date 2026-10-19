@@ -7,17 +7,7 @@ import { h } from "./ui/dom";
 import { SEL } from "./yt-dom";
 
 /** Where a drag must not start: controls and YouTube's own drag handle. */
-const EXCLUDE = [
-  "button:not(.y3s-cb)",
-  "input",
-  "textarea",
-  "[contenteditable]",
-  "#index-container",
-  "#reorder",
-  "ytd-menu-renderer",
-  "#menu",
-  "yt-icon-button",
-].join(", ");
+const EXCLUDE = ["button:not(.y3s-cb)", "input", "textarea", "[contenteditable]", SEL.rowControls].join(", ");
 
 const THRESHOLD = 6; // px before a press becomes a drag
 const EDGE = 48; // px from the top/bottom edge where auto-scroll kicks in

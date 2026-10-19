@@ -35,7 +35,12 @@ export function makePlaylist() {
 }
 
 export function startApi({ port, playlistId, otherPlaylistId = "PLsomeoneElse", me = "UCme" }) {
-  const state = { items: makePlaylist(), writes: [], reads: 0 };
+  const state = { items: makePlaylist(), writes: [], reads: 0, added: {} };
+  const mine = [
+    { id: playlistId, title: "Late night queue" },
+    { id: "PLkeepers", title: "Keepers" },
+    { id: "PLgym", title: "Gym" },
+  ];
   const json = (res, code, body) => {
     res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*" });
     res.end(body === undefined ? "" : JSON.stringify(body));
@@ -67,6 +72,15 @@ export function startApi({ port, playlistId, otherPlaylistId = "PLsomeoneElse", 
     }
     if (req.method === "GET" && p === "/playlists") {
       state.reads++;
+      if (url.searchParams.get("mine") === "true") {
+        return json(res, 200, {
+          items: mine.map((m) => ({
+            id: m.id,
+            snippet: { title: m.title },
+            contentDetails: { itemCount: m.id === playlistId ? state.items.length : (state.added[m.id] ?? []).length },
+          })),
+        });
+      }
       const id = url.searchParams.get("id");
       if (id === playlistId) return json(res, 200, { items: [{ snippet: { title: "Late night queue", channelId: me } }] });
       if (id === otherPlaylistId) return json(res, 200, { items: [{ snippet: { title: "Someone's mix", channelId: "UCother" } }] });
@@ -89,6 +103,14 @@ export function startApi({ port, playlistId, otherPlaylistId = "PLsomeoneElse", 
           },
         })),
       });
+    }
+    if (req.method === "POST" && p === "/playlistItems") {
+      const b = JSON.parse(body);
+      const target = b.snippet.playlistId;
+      if (!mine.some((m) => m.id === target) || target === playlistId) return json(res, 403, { error: { message: "forbidden" } });
+      (state.added[target] ??= []).push(b.snippet.resourceId.videoId);
+      state.writes.push({ kind: "insert", playlistId: target });
+      return json(res, 200, { id: `ADD${state.writes.length}`, snippet: b.snippet });
     }
     if (req.method === "DELETE" && p === "/playlistItems") {
       const id = url.searchParams.get("id");
@@ -205,7 +227,10 @@ export function watchPage(items, playlistId, current) {
   return `<!doctype html><html dark lang="en"><head><meta charset="utf-8"><title>Watch - YouTube</title><style>${THEME}
 ytd-watch-flexy { display:flex; gap:24px; padding:80px 24px 24px }
 #player { flex:1; aspect-ratio:16/9; background:#000; border-radius:12px; overflow:hidden }
-#movie_player, #movie_player video { width:100%; height:100% }
+#movie_player { position:relative; width:100%; height:100% } #movie_player video { width:100%; height:100% }
+.ytp-chrome-bottom { position:absolute; left:12px; right:12px; bottom:0; height:48px; background:linear-gradient(transparent,rgba(0,0,0,.6)) }
+.ytp-chrome-controls { display:flex; justify-content:space-between; height:48px; color:#fff }
+.ytp-left-controls, .ytp-right-controls { display:flex; height:48px } .ytp-button { background:none; border:0; color:#fff; width:48px; font-size:18px; cursor:pointer; display:grid; place-items:center }
 #secondary { flex:0 0 402px }
 ytd-playlist-panel-renderer { display:block; border:1px solid var(--yt-spec-10-percent-layer); border-radius:12px; overflow:hidden }
 #header-contents { padding:12px 16px; background:var(--yt-spec-badge-chip-background) } #header-contents h3 { margin:0; font-size:20px }
@@ -217,11 +242,17 @@ ytd-playlist-panel-video-renderer a { display:flex; gap:8px; color:inherit; text
 #video-title { font-size:14px; line-height:20px; font-weight:500; display:block } #byline { font-size:12px; color:var(--yt-spec-text-secondary) }
 </style></head><body>
 <ytd-masthead><span>☰</span><span class="logo"><b>▶</b>YouTube</span><ytd-searchbox>Search</ytd-searchbox><span class="avatar"></span></ytd-masthead>
-<ytd-watch-flexy><div id="player"><div id="movie_player"><video class="html5-main-video" src="/media/clip.wav" autoplay muted></video></div></div><div id="secondary"><ytd-playlist-panel-renderer id="playlist"><div id="container">
+<ytd-watch-flexy><div id="player"><div id="movie_player"><video class="html5-main-video" src="/media/clip.wav" autoplay muted></video>
+<div class="ytp-chrome-bottom"><div class="ytp-chrome-controls"><div class="ytp-left-controls"><a class="ytp-prev-button ytp-button">⏮</a><button class="ytp-play-button ytp-button">▶</button><a class="ytp-next-button ytp-button">⏭</a></div><div class="ytp-right-controls"><button class="ytp-button">⚙</button><button class="ytp-button">⛶</button></div></div></div></div></div><div id="secondary"><ytd-playlist-panel-renderer id="playlist"><div id="container">
 <div id="header-contents"><h3>Late night queue</h3><div class="meta2">You · ${current + 1} / ${visible.length}</div></div>
 <div id="items">${rows}</div></div></ytd-playlist-panel-renderer></div></ytd-watch-flexy>
 <script>
-// Like YouTube: when a video ends, autoplay the next one in the playlist.
+// Like YouTube: the player's ⏭ goes to the playlist's next video…
+document.querySelector(".ytp-next-button").addEventListener("click", () => {
+  const next = document.querySelectorAll("ytd-playlist-panel-video-renderer")[${current} + 1];
+  if (next) location.href = next.querySelector("a").href;
+});
+// …and when a video ends, autoplay plays the next one.
 document.querySelector("video").addEventListener("ended", () => {
   const next = document.querySelectorAll("ytd-playlist-panel-video-renderer")[${current} + 1];
   if (next) location.href = next.querySelector("a").href;
@@ -246,4 +277,50 @@ export function silentWav(seconds = 2, rate = 8000) {
   buf.write("data", 36);
   buf.writeUInt32LE(n * 2, 40);
   return buf;
+}
+
+
+/** A rough YouTube Music playlist page: dark, 64px top bar, ytmusic-* rows. */
+export function musicPlaylistPage(items, playlistId, { firstPage = 40, pageSize = 25 } = {}) {
+  const visible = items.filter((it) => !it.hidden);
+  const row = (it) => `<ytmusic-responsive-list-item-renderer>
+  <div class="left-items"><div class="thumb" style="width:40px;height:40px;border-radius:4px;background:hsl(${it.hue} 50% 40%)"></div>
+    <ytmusic-play-button-renderer></ytmusic-play-button-renderer></div>
+  <div class="flex-columns">
+    <div class="title-column"><yt-formatted-string class="title"><a href="watch?v=${it.videoId}&list=${playlistId}">${esc(it.title)}</a></yt-formatted-string></div>
+    <div class="secondary-flex-columns"><yt-formatted-string><a>${esc(it.channel)}</a></yt-formatted-string></div>
+  </div>
+  <ytmusic-menu-renderer><tp-yt-paper-icon-button>⋮</tp-yt-paper-icon-button></ytmusic-menu-renderer>
+  <div class="fixed-columns"><yt-formatted-string>${fmt(it.secs)}</yt-formatted-string></div>
+</ytmusic-responsive-list-item-renderer>`;
+  const rows = visible.map(row);
+  const chunks = [];
+  for (let i = firstPage; i < rows.length; i += pageSize) chunks.push(rows.slice(i, i + pageSize).join(""));
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Late night queue - YouTube Music</title><style>
+body { margin:0; background:#030303; color:#fff; font-family:Roboto,Arial,sans-serif }
+ytmusic-nav-bar { position:fixed; top:0; left:0; right:0; height:64px; background:#030303; z-index:10; display:flex; align-items:center; padding:0 24px; font-weight:700 }
+ytmusic-browse-response { display:flex; gap:32px; padding:88px 48px 120px 240px }
+.header { flex:0 0 300px } .header .art { width:264px; height:264px; border-radius:8px; background:linear-gradient(135deg,#7a2,#164) }
+ytmusic-playlist-shelf-renderer { display:block; flex:1; min-width:0 }
+ytmusic-responsive-list-item-renderer { display:flex; align-items:center; gap:16px; height:56px; padding:0 8px; border-bottom:1px solid rgba(255,255,255,.1) }
+ytmusic-responsive-list-item-renderer:hover { background:rgba(255,255,255,.1) }
+.flex-columns { flex:1; min-width:0; display:flex; gap:16px } .title-column { flex:1 } .title-column a { color:#fff; text-decoration:none }
+.secondary-flex-columns { flex:1; color:rgba(255,255,255,.7) } .secondary-flex-columns a { color:inherit }
+.fixed-columns { color:rgba(255,255,255,.7); width:48px; text-align:right }
+ytmusic-menu-renderer { width:32px; text-align:center; color:rgba(255,255,255,.7) }
+ytmusic-continuation-item-renderer { display:block; height:48px }
+ytmusic-player-bar { position:fixed; left:0; right:0; bottom:0; height:72px; background:#212121 }
+</style></head><body>
+<ytmusic-nav-bar>Music</ytmusic-nav-bar>
+<ytmusic-browse-response><div class="header"><div class="art"></div><h1>Late night queue</h1></div>
+<ytmusic-playlist-shelf-renderer><div id="contents">${rows.slice(0, firstPage).join("")}${chunks.length ? "<ytmusic-continuation-item-renderer></ytmusic-continuation-item-renderer>" : ""}</div></ytmusic-playlist-shelf-renderer>
+</ytmusic-browse-response>
+<ytmusic-player-bar></ytmusic-player-bar>
+<script>
+const more = ${JSON.stringify(chunks)}; let page = 0;
+const c = document.querySelector('ytmusic-continuation-item-renderer');
+if (c) new IntersectionObserver((es, io) => { if (!es[0].isIntersecting || c.dataset.busy) return; c.dataset.busy = 1;
+  setTimeout(() => { const t = document.createElement('template'); t.innerHTML = more[page++]; c.before(t.content);
+    delete c.dataset.busy; if (page >= more.length) { io.disconnect(); c.remove(); } }, 250); }).observe(c);
+</script></body></html>`;
 }
