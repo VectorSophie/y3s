@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "y3s demo",
+  "version": "0.4.0",
+  "description": "Prototype of y3s: native-looking filter, sort, multi-select and keyboard tools for YouTube playlists. Local only; saves nothing to your account.",
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
