@@ -46,6 +46,8 @@ export const SEL = site() === "music" ? MUSIC : YOUTUBE;
 const TIME_RE = /^\d{1,2}(?::\d{2}){1,2}$/;
 const DURATION_SEL = [
   "ytd-thumbnail-overlay-time-status-renderer #text",
+  "ytd-thumbnail-overlay-time-status-renderer span",
+  ".ytBadgeShapeText",
   ".badge-shape-wiz__text",
   ".yt-badge-shape__text",
   "badge-shape",

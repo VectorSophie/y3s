@@ -101,9 +101,10 @@ describe("phase player on the watch page", () => {
       )
       .join("");
     const panel = `<ytd-playlist-panel-renderer id="playlist"><div id="items">${rows}</div></ytd-playlist-panel-renderer>`;
+    // Like the live miniplayer: no playlist rows, just "N / M" and a ⏭ link.
     document.body.innerHTML = mini
-      ? `<ytd-app miniplayer-is-active></ytd-app><ytd-miniplayer active><div id="movie_player"><video></video></div>${panel}</ytd-miniplayer>`
-      : `<div id="movie_player"><video></video><div class="ytp-right-controls"><button class="ytp-next-button"></button></div></div>${panel}`;
+      ? `<ytd-app miniplayer-is-active></ytd-app><ytd-miniplayer><div id="movie_player"><video></video><a class="ytp-next-button" href="/watch?v=v${current + 1}&list=PL"></a></div><ytd-miniplayer-info-bar>Mid<br>PL • ${current} / 6</ytd-miniplayer-info-bar></ytd-miniplayer>`
+      : `<div id="movie_player"><video></video><div class="ytp-chrome-controls"><div class="ytp-right-controls"><button class="ytp-next-button"></button></div></div></div>${panel}`;
     clicked = [];
   };
   const onClick = (e: Event) => {
@@ -126,7 +127,8 @@ describe("phase player on the watch page", () => {
     watch(3);
     const p = new PhasePlayer({ ...startPlay({ playlistId: "PL", name: "Mid", items, loop: true, shuffle: false }), pending: null });
     p.tick();
-    const bar = document.querySelector(".ytp-right-controls .y3s-ytp")!;
+    const bar = document.querySelector(".y3s-ytp")!;
+    expect(bar.nextElementSibling?.className).toBe("ytp-right-controls");
     expect(bar.textContent).toContain("Mid · 1/3");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "N", shiftKey: true, bubbles: true, cancelable: true }));
     expect(clicked).toEqual(["v4"]);
@@ -135,18 +137,24 @@ describe("phase player on the watch page", () => {
     p.destroy();
   });
 
-  test("keeps going in the miniplayer, using the miniplayer's own links", async () => {
-    const { PhasePlayer, miniplayerActive, miniplayerPlaylist } = await import("../src/content/phase-player");
+  test("keeps going in the miniplayer, following its playlist position", async () => {
+    const { PhasePlayer, loadPlay, miniplayerActive, miniplayerPlaylist } = await import("../src/content/phase-player");
     history.replaceState(null, "", "/feed/subscriptions");
     watch(4, true);
     expect(miniplayerActive()).toBe(true);
     expect(miniplayerPlaylist()).toBe("PL");
-    const p = new PhasePlayer({ ...startPlay({ playlistId: "PL", name: "Mid", items, loop: true, shuffle: false }), pos: 1, pending: null });
+    const s0 = { ...startPlay({ playlistId: "PL", name: "Mid", items, loop: false, shuffle: false }), pos: 1, pending: null };
+    const p = new PhasePlayer(s0);
     p.tick();
-    p.next();
-    expect(clicked).toEqual(["v5"]);
-    expect(document.querySelector<HTMLAnchorElement>("ytd-miniplayer a[href*='v=v5']")).not.toBeNull();
-    p.destroy();
+    expect(p.state.pos).toBe(1);
+    // YouTube's autoplay moves the miniplayer on to playlist position 5
+    document.querySelector("ytd-miniplayer-info-bar")!.textContent = "Mid PL • 5 / 6";
+    p.tick();
+    expect(p.state.pos).toBe(2);
+    // …and position 6 is outside the phase: phase playback ends
+    document.querySelector("ytd-miniplayer-info-bar")!.textContent = "Mid PL • 6 / 6";
+    p.tick();
+    expect(loadPlay()).toBeNull();
   });
 });
 

@@ -67,7 +67,8 @@ function main(): void {
             ? miniplayerPlaylist()
             : null;
       const onIt = !!play && listId === play.playlistId;
-      if (state.player && (!onIt || state.player.playlistId !== play?.playlistId)) {
+      // A phase started from the watch panel replaces the one playing.
+      if (state.player && (!onIt || state.player.state.startedAt !== play?.startedAt)) {
         state.player.destroy();
         state.player = null;
       }

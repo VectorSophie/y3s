@@ -396,10 +396,16 @@ try {
   check(/Looping Videos 51–53/.test(pill) && / of 3/.test(pill), "watch page shows the loop", pill);
   const outside = await page.$$eval("ytd-playlist-panel-video-renderer.y3s-outside", (e) => e.length);
   check(outside === state.items.length - 3, "videos outside the phase are dimmed in the panel", String(outside));
+  const heads = await page.$$eval(".y3s-panel-phase .y3s-panel-phase-name", (e) => e.map((x) => x.textContent));
+  check(
+    JSON.stringify(heads) === JSON.stringify(["Videos 1–50", "Videos 51–53", "Videos 54–95"]),
+    "the watch page's playlist panel shows the phases",
+    JSON.stringify(heads),
+  );
   await shot("15-loop-pill");
 
   // controls inside YouTube's player bar
-  const ytp = await page.textContent(".ytp-right-controls .y3s-ytp").catch(() => "");
+  const ytp = await page.textContent(".y3s-ytp").catch(() => "");
   check(/Looping Videos 51–53 · [123]\/3/.test(ytp), "player bar shows the phase and position", ytp);
   await shot("16-player-bar");
   // Shift+P goes back within the phase (YouTube would otherwise go on to the next video)
@@ -429,6 +435,12 @@ try {
   await page.waitForURL(new RegExp(`v=${ids0[10]}`));
   await waitFor(async () => !(await page.$(".y3s-play-pill")), 5000);
   check(!(await page.$(".y3s-play-pill")), "choosing a video outside the phase stops phase playback");
+  // a phase header in the panel plays that phase
+  await page.locator(".y3s-panel-phase").nth(1).click();
+  await page.waitForURL(new RegExp(`v=${loopIds[0]}`));
+  await page.waitForSelector(".y3s-play-pill");
+  check(/Playing Videos 51–53/.test(await page.textContent(".y3s-play-pill")), "clicking a phase in the panel plays it");
+  await page.click('.y3s-play-pill [aria-label="Stop phase playback"]');
   await page.goto(`https://www.youtube.com/playlist?list=${PL}`);
   await page.waitForSelector(".y3s-bar");
   await waitFor(async () => (await page.$$(".y3s-phase")).length === 3);

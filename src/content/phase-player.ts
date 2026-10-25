@@ -25,6 +25,13 @@ import { showSnack } from "./ui/snackbar";
 import { findPlaylistPanel, SEL, site } from "./yt-dom";
 
 const KEY = "y3s:play";
+/** Heavier icons for the player bar, matching the player's own. */
+const PLAYER_ICONS = {
+  loop: "M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z",
+  shuffle:
+    "M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z",
+  close: "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+};
 /** Seconds before the end at which we move on ourselves. */
 const LEAD = 0.6;
 
@@ -56,23 +63,16 @@ export function miniplayerActive(): boolean {
   );
 }
 
-function miniplayerRows(): HTMLElement[] {
-  return [...document.querySelectorAll<HTMLElement>(`ytd-miniplayer ${SEL.panelRow}`)];
-}
-
-/** Playlist of the video in the miniplayer, read from its playlist panel. */
+/** Playlist of the miniplayer, read from its ⏭ link (it has no playlist rows). */
 export function miniplayerPlaylist(): string | null {
-  const a = miniplayerRows()[0]?.querySelector("a[href*='watch?v=']");
+  const a = document.querySelector("ytd-miniplayer .ytp-next-button[href*='list='], ytd-miniplayer .ytp-prev-button[href*='list=']");
   return a ? params(a.getAttribute("href")!).get("list") : null;
 }
 
-/** The video playing now: from the address on the watch page, else the miniplayer. */
-function videoParam(): string | null {
-  if (location.pathname === "/watch") return new URLSearchParams(location.search).get("v");
-  if (!miniplayerActive()) return null;
-  const sel = miniplayerRows().find((r) => r.hasAttribute("selected"));
-  const a = sel?.querySelector("a[href*='watch?v=']");
-  return a ? params(a.getAttribute("href")!).get("v") : null;
+/** Playlist position shown in the miniplayer's info bar ("3 / 12"). */
+function miniplayerIndex(): number | null {
+  const m = /(\d+)\s*\/\s*\d+/.exec(document.querySelector("ytd-miniplayer-info-bar")?.textContent ?? "");
+  return m ? Number(m[1]) : null;
 }
 
 const isTyping = (t: EventTarget | null) =>
@@ -134,7 +134,7 @@ export class PhasePlayer {
   /** Called on every navigation and once a second. */
   tick(): void {
     if (this.stopped) return;
-    const v = videoParam();
+    const v = this.playing();
     if (v && v !== this.seenVideo) {
       this.seenVideo = v;
       this.onNavigate(v);
@@ -148,6 +148,17 @@ export class PhasePlayer {
       video?.addEventListener("ended", this.onEnded);
     }
     this.render();
+  }
+
+  /** The video playing now: from the address on the watch page, else the
+   *  miniplayer's playlist position (it shows no video id). A position
+   *  outside the phase gives a placeholder id that matches nothing. */
+  private playing(): string | null {
+    if (location.pathname === "/watch") return new URLSearchParams(location.search).get("v");
+    if (!miniplayerActive()) return null;
+    const n = miniplayerIndex();
+    if (n === null) return null;
+    return this.s.items.find((i) => i.index === n)?.videoId ?? `#${n}`;
   }
 
   private detachVideo(): void {
@@ -193,7 +204,7 @@ export class PhasePlayer {
   private onTime = () => {
     const vid = this.video;
     if (!vid || this.finished || adShowing() || !isFinite(vid.duration) || vid.duration < 1) return;
-    const playing = videoParam();
+    const playing = this.playing();
     if (!playing || !contains(this.s, playing) || this.jumpedFrom === playing) return;
     if (vid.duration - vid.currentTime > LEAD) return;
     this.finishCurrent(vid, playing);
@@ -202,7 +213,7 @@ export class PhasePlayer {
   private onEnded = () => {
     this.endedAt = Date.now();
     const vid = this.video;
-    const playing = videoParam();
+    const playing = this.playing();
     if (vid && playing && contains(this.s, playing) && this.jumpedFrom !== playing && !this.finished) {
       this.finishCurrent(vid, playing);
     }
@@ -228,7 +239,7 @@ export class PhasePlayer {
       this.update({ ...next, pending: target.videoId });
       clearTimeout(this.handoff);
       this.handoff = window.setTimeout(() => {
-        if (videoParam() === playing) this.go(target);
+        if (this.playing() === playing) this.go(target);
       }, 4000);
       return;
     }
@@ -253,12 +264,12 @@ export class PhasePlayer {
   /** Open a video of the phase, through the playlist panel when possible. */
   private go(item: PlayItem): void {
     this.update({ ...this.s, pending: item.videoId });
-    const scope = miniplayerActive() ? "ytd-miniplayer " : "";
-    let links = [...document.querySelectorAll<HTMLAnchorElement>(`${scope}${SEL.panelRow} a[href*="watch?v="]`)].filter(
+    // ponytail: the miniplayer has no playlist rows to click, so a jump from
+    // there reopens the watch page; natural next still plays in the miniplayer.
+    const scope = miniplayerActive() ? null : (findPlaylistPanel() ?? document);
+    const links = [...(scope?.querySelectorAll<HTMLAnchorElement>(`${SEL.panelRow} a[href*="watch?v="]`) ?? [])].filter(
       (a) => new URLSearchParams(a.getAttribute("href")!.split("?")[1]).get("v") === item.videoId,
     );
-    // On the watch page, use the visible panel's links, not the miniplayer's copy.
-    if (!scope) links = links.filter((a) => !a.closest("ytd-miniplayer"));
     const best =
       links.find((a) => new URLSearchParams(a.getAttribute("href")!.split("?")[1]).get("index") === String(item.index)) ??
       links[0];
@@ -275,7 +286,7 @@ export class PhasePlayer {
     }
     this.finished = false;
     this.update(n);
-    this.jumpedFrom = videoParam();
+    this.jumpedFrom = this.playing();
     this.video?.pause();
     this.go(current(n)!);
   }
@@ -294,14 +305,14 @@ export class PhasePlayer {
     }
     this.finished = false;
     this.update(p);
-    this.jumpedFrom = videoParam();
+    this.jumpedFrom = this.playing();
     this.go(current(p)!);
   }
 
   private onPlayerClick = (e: MouseEvent) => {
     const t = e.target as Element | null;
     const btn = t?.closest?.(`${SEL.playerNext}, ${SEL.playerPrev}`);
-    if (!btn || btn.closest(".y3s-ytp") || !contains(this.s, videoParam())) return;
+    if (!btn || btn.closest(".y3s-ytp") || !contains(this.s, this.playing())) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (btn.matches(SEL.playerNext)) this.next();
@@ -316,7 +327,7 @@ export class PhasePlayer {
     const dir = music
       ? !e.shiftKey && (k === "j" ? 1 : k === "k" ? -1 : 0)
       : e.shiftKey && (k === "n" ? 1 : k === "p" ? -1 : 0);
-    if (!dir || !contains(this.s, videoParam())) return;
+    if (!dir || !contains(this.s, this.playing())) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (dir > 0) this.next();
@@ -372,14 +383,18 @@ export class PhasePlayer {
     );
   }
 
-  /** Controls inside YouTube's player bar, so they're there in fullscreen too. */
+  /** Controls in YouTube's player bar, so they're there in fullscreen too.
+   *  On YouTube it's a pill of its own beside the right-hand controls (in the
+   *  player's own style); YouTube's ⏮ ⏭ already step within the phase. */
   private renderBar(): void {
     const host = document.querySelector<HTMLElement>(SEL.playerControls);
-    if (!host) {
+    if (!host || host.closest("ytd-miniplayer")) {
       this.bar?.remove();
       return;
     }
-    if (!this.bar || this.bar.parentElement !== host) {
+    const music = site() === "music";
+    const placed = music ? this.bar?.parentElement === host : this.bar?.nextElementSibling === host;
+    if (!this.bar || !placed) {
       this.bar?.remove();
       const btn = (label: string, ic: string, fn: () => void, cls: string) => {
         const b = h(
@@ -397,12 +412,12 @@ export class PhasePlayer {
         "div",
         { class: "y3s-ytp", role: "group", "aria-label": "Phase playback" },
         h("span", { class: "y3s-ytp-label" }),
-        btn(`Previous in phase (${site() === "music" ? "k" : "Shift+P"})`, ICONS.prev, () => this.prev(), "y3s-ytp-prev"),
-        btn(`Next in phase (${site() === "music" ? "j" : "Shift+N"})`, ICONS.next, () => this.next(), "y3s-ytp-next"),
-        btn("Loop phase", ICONS.loop, () => this.toggleLoop(), "y3s-ytp-loop"),
-        btn("Shuffle within phase", ICONS.shuffle, () => this.toggleShuffle(), "y3s-ytp-shuffle"),
+        btn("Loop phase", PLAYER_ICONS.loop, () => this.toggleLoop(), "y3s-ytp-loop"),
+        btn("Shuffle within phase", PLAYER_ICONS.shuffle, () => this.toggleShuffle(), "y3s-ytp-shuffle"),
+        btn("Stop phase playback", PLAYER_ICONS.close, () => this.stop(`Stopped playing ${this.s.name}`), "y3s-ytp-stop"),
       );
-      host.prepend(this.bar);
+      if (music) host.prepend(this.bar);
+      else host.before(this.bar);
     }
     const b = this.bar;
     const verb = this.finished ? "Finished" : this.s.loop ? "Looping" : "";

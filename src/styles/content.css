@@ -1,14 +1,17 @@
-/* y3s demo: every color comes from YouTube's own theme variables, with
-   fallbacks matching YouTube's light and dark palettes. */
+/* Every color comes from YouTube's own theme variables: the current
+   --yt-sys-color-baseline--* set, then the older --yt-spec-* names, then
+   YouTube's light/dark values. */
 html {
-  --y3s-text: var(--yt-spec-text-primary, #0f0f0f);
-  --y3s-text2: var(--yt-spec-text-secondary, #606060);
-  --y3s-inverse: var(--yt-spec-text-primary-inverse, #fff);
-  --y3s-bg: var(--yt-spec-base-background, #fff);
-  --y3s-layer: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.05));
-  --y3s-layer-hover: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
-  --y3s-menu: var(--yt-spec-menu-background, #fff);
-  --y3s-raised: var(--yt-spec-raised-background, #fff);
+  --y3s-text: var(--yt-sys-color-baseline--text-primary, var(--yt-spec-text-primary, #0f0f0f));
+  --y3s-text2: var(--yt-sys-color-baseline--text-secondary, var(--yt-spec-text-secondary, #606060));
+  --y3s-inverse: var(--yt-sys-color-baseline--text-primary-inverse, var(--yt-spec-text-primary-inverse, #fff));
+  --y3s-bg: var(--yt-sys-color-baseline--base-background, var(--yt-spec-base-background, #fff));
+  --y3s-layer: var(--yt-sys-color-baseline--additive-background, var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.05)));
+  --y3s-layer-hover: var(--yt-sys-color-baseline--mono-tonal-hover, var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1)));
+  --y3s-menu: var(--yt-sys-color-baseline--menu-background, var(--yt-spec-menu-background, #fff));
+  --y3s-raised: var(--yt-sys-color-baseline--raised-background, var(--yt-spec-raised-background, #fff));
+  --y3s-cta: var(--yt-sys-color-baseline--call-to-action, var(--yt-spec-call-to-action, #065fd4));
+  --y3s-red: var(--yt-sys-color-baseline--static-brand-red, var(--yt-spec-brand-icon-active, #f03));
   --y3s-field: #fff;
   --y3s-field-border: #ccc;
   --y3s-focus-border: #1c62b9;
@@ -17,14 +20,15 @@ html {
   --y3s-shadow: 0 4px 32px rgba(0, 0, 0, 0.1);
 }
 html[dark] {
-  --y3s-text: var(--yt-spec-text-primary, #f1f1f1);
-  --y3s-text2: var(--yt-spec-text-secondary, #aaa);
-  --y3s-inverse: var(--yt-spec-text-primary-inverse, #0f0f0f);
-  --y3s-bg: var(--yt-spec-base-background, #0f0f0f);
-  --y3s-layer: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1));
-  --y3s-layer-hover: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.2));
-  --y3s-menu: var(--yt-spec-menu-background, #282828);
-  --y3s-raised: var(--yt-spec-raised-background, #212121);
+  --y3s-text: var(--yt-sys-color-baseline--text-primary, var(--yt-spec-text-primary, #f1f1f1));
+  --y3s-text2: var(--yt-sys-color-baseline--text-secondary, var(--yt-spec-text-secondary, #aaa));
+  --y3s-inverse: var(--yt-sys-color-baseline--text-primary-inverse, var(--yt-spec-text-primary-inverse, #0f0f0f));
+  --y3s-bg: var(--yt-sys-color-baseline--base-background, var(--yt-spec-base-background, #0f0f0f));
+  --y3s-layer: var(--yt-sys-color-baseline--additive-background, var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1)));
+  --y3s-layer-hover: var(--yt-sys-color-baseline--mono-tonal-hover, var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.2)));
+  --y3s-menu: var(--yt-sys-color-baseline--menu-background, var(--yt-spec-menu-background, #282828));
+  --y3s-raised: var(--yt-sys-color-baseline--raised-background, var(--yt-spec-raised-background, #212121));
+  --y3s-cta: var(--yt-sys-color-baseline--call-to-action, var(--yt-spec-call-to-action, #3ea6ff));
   --y3s-field: #121212;
   --y3s-field-border: #303030;
   --y3s-focus-border: #1c62b9;
@@ -102,10 +106,7 @@ html[dark] {
 }
 .y3s-btn-text {
   background: transparent !important;
-  color: var(--yt-spec-call-to-action, #065fd4) !important;
-}
-html[dark] .y3s-btn-text {
-  color: var(--yt-spec-call-to-action, #3ea6ff) !important;
+  color: var(--y3s-cta) !important;
 }
 .y3s-btn-text:hover {
   background: rgba(62, 166, 255, 0.15) !important;
@@ -693,7 +694,7 @@ html.y3s-dragging * {
 .y3s-play-icon {
   display: grid;
   place-items: center;
-  color: var(--yt-spec-brand-icon-active, #f00);
+  color: var(--y3s-red);
 }
 .y3s-play-icon .y3s-icon {
   width: 20px;
@@ -726,51 +727,112 @@ ytd-playlist-panel-video-renderer.y3s-outside:hover {
   opacity: 0.8;
 }
 
-/* ---------- phase controls inside YouTube's player bar */
+/* ---------- phase controls in YouTube's player bar: a pill of its own, in
+   the player's style (translucent, 40px, fully rounded) */
 .y3s-ytp {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  height: 100%;
-  vertical-align: top;
-  float: left;
+  flex: none;
+  height: 40px;
+  margin: 8px 8px 0 0;
+  padding: 0 4px 0 0;
+  border-radius: 28px;
+  background: rgba(0, 0, 0, 0.3);
 }
 .y3s-ytp-label {
-  max-width: 200px;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 500 13px/48px "Roboto", "Arial", sans-serif;
+  font: 500 14px/40px "YouTube Noto", "Roboto", "Arial", sans-serif;
   color: #fff;
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-  padding: 0 4px 0 8px;
-}
-.ytp-big-mode .y3s-ytp-label {
-  font-size: 17px;
-  line-height: 54px;
-  max-width: 320px;
+  padding: 0 4px 0 16px;
 }
 .y3s-ytp .y3s-ytp-btn {
   display: inline-grid !important;
   place-items: center;
   width: 40px !important;
-  height: 100%;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  background: none;
   color: #fff;
+}
+.y3s-ytp .y3s-ytp-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 .y3s-ytp .y3s-ytp-btn .y3s-icon {
   width: 24px;
   height: 24px;
-  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5));
 }
 .y3s-ytp .y3s-ytp-btn[aria-pressed="false"] {
-  opacity: 0.55;
+  opacity: 0.6;
 }
-.ytp-autohide .y3s-ytp-label {
-  visibility: hidden;
+.ytp-big-mode .y3s-ytp {
+  height: 48px;
+  margin-top: 12px;
+}
+.ytp-big-mode .y3s-ytp-label {
+  font-size: 17px;
+  line-height: 48px;
+  max-width: 360px;
+}
+.ytp-small-mode .y3s-ytp-label {
+  display: none;
 }
 @media (max-width: 720px) {
   .y3s-ytp-label {
     display: none;
   }
+}
+
+/* ---------- phase headers in the watch page's playlist panel */
+.y3s-panel-phase {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 16px 8px 12px;
+  border: 0;
+  border-top: 1px solid var(--y3s-layer-hover);
+  background: none;
+  font: 500 14px/20px "Roboto", "Arial", sans-serif;
+  color: var(--y3s-text);
+  text-align: left;
+  cursor: pointer;
+}
+.y3s-panel-phase:first-child {
+  border-top: 0;
+}
+.y3s-panel-phase:hover {
+  background: var(--y3s-layer);
+}
+.y3s-panel-phase:focus-visible {
+  outline: 2px solid var(--y3s-text);
+  outline-offset: -2px;
+}
+.y3s-panel-phase .y3s-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--y3s-text2);
+}
+.y3s-panel-phase:hover .y3s-icon,
+.y3s-panel-phase.y3s-current .y3s-icon {
+  color: var(--y3s-red);
+}
+.y3s-panel-phase-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.y3s-panel-phase-meta {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--y3s-text2);
 }
 
 /* ---------- pick-a-playlist dialog */
@@ -926,9 +988,8 @@ html.y3s-music .y3s-cbwrap {
   flex: 0 0 32px;
 }
 html.y3s-music .y3s-ytp {
-  height: auto;
-  float: none;
-  margin-right: 8px;
+  margin: 0 8px 0 0;
+  background: none;
 }
 html.y3s-music .y3s-ytp-label {
   line-height: 40px;

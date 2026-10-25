@@ -86,6 +86,11 @@ real browser. Screenshots land in `tests/e2e/out/` (gitignored).
 
 ## Gotchas learned the hard way
 
+- Live YouTube (2026-10): theme variables are `--yt-sys-color-baseline--*`
+  (the `--yt-spec-*` ones are gone from `html`); the player is the "delhi"
+  design: controls are translucent 40 px pills (`.ytp-right-controls` holds
+  `-left`/`-right` groups). y3s's player controls are their own pill placed
+  before it. Durations are in `.ytBadgeShapeText`.
 - YouTube enforces **Trusted Types**: never use `innerHTML`; build with `h()`.
 - `el?.focus() ?? other.focus()` always runs the fallback (focus returns
   undefined). Dialog autofocus had this bug.
@@ -107,8 +112,10 @@ real browser. Screenshots land in `tests/e2e/out/` (gitignored).
 2. YouTube Music gaps: no queue-panel filter; phase steps reload the player
    page (queue items have no links); phase playback idles while browsing
    off the player page.
-3. Miniplayer support is mock-tested only (`ytd-app[miniplayer-is-active]`,
-   `ytd-miniplayer` panel links).
+3. Miniplayer (checked live 2026-10-26): it has **no playlist rows**. y3s
+   reads the playlist from its ⏭ link and the position from the info bar's
+   "N / M". Natural next plays on in the miniplayer; a jump (phase edge,
+   shuffle) reopens the watch page.
 4. Roadmap: drag a selected block to a new position; play filtered results;
    optional internal-endpoint saving; Firefox/Edge builds.
 5. Tag a 0.4.0 release once the live-site check passes.
